@@ -1,55 +1,73 @@
-# 커밋, 릴리즈 및 배포 워크플로우
+# 자동화된 커밋, 릴리즈 및 배포 워크플로우
 
-**Nexus-AI**는 "Single Source of Truth (SSOT)" 원칙을 따릅니다. 코드가 곧 문서이며, 자동화된 스크립트를 통해 릴리즈 프로세스를 관리합니다.
+**Nexus-AI**는 "Single Source of Truth (SSOT)" 원칙을 따르며, 코드 자체가 문서가 되는 것을 지향합니다. 모든 릴리즈와 배포 과정은 개발자의 개입을 최소화하는 자동화된 스크립트를 통해 관리됩니다.
 
 ---
 
 ## 1. 개발 및 문서화 (Development)
 
-기능 개발 시, 코드를 수정하면 관련 문서와 레지스트리가 자동으로 동기화될 수 있도록 다음 규칙을 따른다.
+코드를 수정하면 관련 문서와 레지스트리가 자동으로 동기화되도록 다음 규칙을 준수합니다.
 
-*   **AI 기능 추가/수정**: `services/prompts.ts` 내의 `AI_FEATURES` 배열을 수정한다.
-    *   `SettingsPage` 레지스트리에 자동 반영됨.
-    *   `npm run build` 또는 `npm run gen:docs` 실행 시 `docs/AI_FEATURES.md` 파일이 자동 생성됨.
-*   **디자인/개발 가이드**: `DESIGN_SYSTEM.md` 또는 `DEVELOPER_GUIDE.md`를 수정하면, `SettingsPage`에서 즉시 최신본을 다운로드할 수 있다.
+-   **AI 기능 추가/수정**: `services/prompts.ts`의 `AI_FEATURES` 배열을 직접 수정합니다.
+    -   `SettingsPage` 레지스트리에 자동으로 반영됩니다.
+    -   `npm run build` 또는 `npm run gen:docs` 실행 시 `docs/AI_FEATURES.md` 문서가 자동으로 생성되어 기능 변경 사항을 추적할 수 있습니다.
+-   **디자인/개발 가이드**: `DESIGN_SYSTEM.md` 또는 `DEVELOPER_GUIDE.md`를 수정하면, `SettingsPage`에서 항상 최신 버전을 다운로드할 수 있습니다.
 
-## 2. 릴리즈 및 Changelog (Release)
+## 2. 기능 커밋 (Feature Commit)
 
-작업이 완료되고 배포할 준비가 되면, 수동으로 파일을 수정하지 않고 자동화 스크립트를 사용한다.
+개발이 완료된 기능은 명확한 메시지와 함께 커밋합니다. 이 커밋 메시지는 `changelog.json`에 자동으로 기록될 **릴리즈 정보의 기반**이 됩니다. **본문에 마크다운 문법을 사용하면, 릴리즈 노트에 서식이 그대로 반영됩니다.**
 
-1.  **릴리즈 스크립트 실행**:
-    ```bash
-    npm run release
-    ```
-2.  **프롬프트 입력**:
-    *   **Version**: 새 버전 번호 입력 (Enter 입력 시 Patch 버전 자동 증가).
-    *   **Title**: 릴리즈 제목 입력.
-    *   **Description**: 변경 사항 요약 (HTML 태그 사용 가능).
-3.  **자동 수행 작업**:
-    *   `package.json` 버전 업데이트.
-    *   `data/changelog.json` 최상단에 새 항목 추가.
 
-## 3. 커밋, 푸시 및 배포 (Commit, Push & Deploy)
+<br>
 
-1.  **빌드 테스트 (자동 문서 생성 포함)**:
-    ```bash
-    npm run build
-    ```
-    *   이 과정에서 `scripts/generate-docs.ts`가 실행되어 문서를 최신화하고, 빌드 오류가 없는지 확인합니다.
-2.  **커밋 및 푸시 (Commit & Push)**:
-    *   빌드가 성공하면 **즉시 커밋하고 원격 저장소에 푸시**합니다.
-    ```bash
-    git add .
-    git commit -m "chore(release): bump to v[버전]"  # 또는 기능별 커밋 메시지
-    git push
-    ```
-3.  **배포 (Deploy)**:
-    *   커밋 및 푸시가 완료된 후, 사용자에게 최종 배포 여부를 묻고 승인 시 배포를 진행합니다.
+**✅ 좋은 커밋 메시지 예시:**
+
+```bash
+git commit -m "feat(auth): 소셜 로그인 기능 추가" -m "
+여러 소셜 플랫폼을 통한 간편 로그인 기능을 구현했습니다.
+
+- **✨ 주요 변경 사항**
+  - Google, GitHub 계정을 사용한 OAuth 2.0 로그인 연동
+  - 로그인 UI/UX 개선으로 사용자 접근성 향상
+  - 관련 라이브러리: \`passport-google-oauth20\`, \`passport-github2\`
+
+- **\u{1F4A1} 기대 효과**
+  - 신규 사용자 가입 장벽 감소
+  - 비밀번호 분실 및 관리 부담 완화
+"
+```
+
+<br>
+
+-   **첫 번째 줄 (제목)**: 릴리즈의 **제목**이 됩니다. (e.g., `feat(auth): 소셜 로그인 기능 추가`)
+-   **그 이후 줄 (본문)**: 릴리즈의 **상세 설명**이 됩니다. 마크다운 문법(리스트, 강조 등)을 사용하여 변경 사항을 명확하고 풍부하게 전달할 수 있습니다.
+
+
+## 3. 릴리즈, 빌드 및 배포 (Release, Build & Deploy)
+
+"**배포해줘**"라고 요청하면, AI 어시스턴트가 다음의 모든 과정을 자동으로 처리합니다.
+
+1.  **릴리즈 준비 (`npm run release`)**:
+    -   가장 최근의 커밋 메시지를 가져와 `title`과 마크다운 `description`을 추출합니다.
+    -   `package.json`의 버전을 자동으로 **Patch** 업데이트합니다. (e.g., `1.8.1` -> `1.8.2`)
+    -   추출된 정보와 새 버전으로 `data/changelog.json`에 새로운 항목을 추가합니다.
+
+2.  **변경사항 커밋**:
+    -   릴리즈 준비 과정에서 변경된 파일(`package.json`, `changelog.json`)을 스테이징합니다.
+    -   `chore(release): bump to v[버전]` 형태의 표준화된 메시지로 커밋합니다.
+
+3.  **최종 빌드 및 검수**:
+    -   `npm run build`를 실행하여 최종 프로덕션 빌드를 생성하고, 동시에 `docs/AI_FEATURES.md`를 최신화합니다.
+    -   빌드 성공 후, AI 어시스턴트는 생성된 AI 기능 문서를 검토하여 **새롭게 추가되거나 변경된 기능이 있는지 확인**하고 사용자에게 보고합니다.
+
+4.  **원격 푸시 및 배포**:
+    -   사용자의 최종 승인 후, 모든 변경 사항을 원격 저장소에 푸시합니다.
+    -   푸시가 완료되면, `dist` 폴더의 빌드 결과물을 사용하여 Firebase 호스팅에 자동으로 배포합니다.
 
 ---
 
 ### ✅ SSOT 체크포인트
 
-*   `services/prompts.ts`의 `AI_FEATURES`가 최신인가? (자동 문서화 대상)
-*   `npm run release`를 통해 `changelog.json`을 갱신했는가?
-*   `docs/` 폴더 내의 문서가 빌드 후 갱신되었는가?
+-   **커밋 메시지**: `changelog.json`에 기록될 내용이므로, 마크다운을 활용하여 명확하고 풍부하게 작성되었는가?
+-   **자동화**: `npm run release` 스크립트가 커밋 정보를 올바르게 반영하는가?
+-   **문서**: `docs/AI_FEATURES.md`가 빌드 후 최신 상태를 유지하는가?
