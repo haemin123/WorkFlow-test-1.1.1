@@ -1,5 +1,10 @@
-
 [
+  {
+    "version": "1.8.1",
+    "date": "2025-11-25",
+    "title": "docs(workflow): update workflow guide with automated release process",
+    "description": "No description provided."
+  },
   {
     "version": "1.8.0",
     "date": "2025-11-23",
