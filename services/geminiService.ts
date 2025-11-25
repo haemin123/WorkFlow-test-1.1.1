@@ -3,7 +3,7 @@ import { Task, AIAnalysis, Subtask, Priority, Resource, AcceptanceCriterion } fr
 import { AI_CONFIG } from "../constants";
 import { PromptTemplates } from "./prompts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 
 // Helper for JSON generation to reduce duplication
 async function generateJSON<T>(prompt: string, schema: any): Promise<T | null> {
