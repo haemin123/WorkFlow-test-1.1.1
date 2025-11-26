@@ -8,15 +8,31 @@ import {
   updateDoc, 
   deleteDoc,
   query,
-  orderBy
+  orderBy,
+  where
 } from "firebase/firestore";
 
 const COLLECTION_NAME = 'tasks';
 
+// Helper to remove undefined fields because Firestore doesn't support them
+const sanitizeForFirestore = (data: any) => {
+  return JSON.parse(JSON.stringify(data));
+};
+
 export const taskService = {
-  getAllTasks: async (): Promise<Task[]> => {
+  getAllTasks: async (userId?: string): Promise<Task[]> => {
     try {
-      const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
+      let q;
+      if (userId) {
+          q = query(
+            collection(db, COLLECTION_NAME), 
+            where('userId', '==', userId),
+            orderBy('createdAt', 'desc')
+          );
+      } else {
+          q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
+      }
+      
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(doc => doc.data() as Task);
     } catch (error) {
@@ -31,8 +47,11 @@ export const taskService = {
       createdAt: Date.now(), 
       updatedAt: Date.now() 
     };
+    // Ensure no undefined values
+    const sanitizedTask = sanitizeForFirestore(newTask);
+    
     try {
-      await setDoc(doc(db, COLLECTION_NAME, newTask.id), newTask);
+      await setDoc(doc(db, COLLECTION_NAME, newTask.id), sanitizedTask);
       return newTask;
     } catch (error) {
       console.error("Error creating task:", error);
@@ -42,8 +61,10 @@ export const taskService = {
 
   updateTask: async (updatedTask: Task): Promise<Task> => {
     const newVersion = { ...updatedTask, updatedAt: Date.now() };
+    const sanitizedVersion = sanitizeForFirestore(newVersion);
+
     try {
-      await updateDoc(doc(db, COLLECTION_NAME, updatedTask.id), newVersion);
+      await updateDoc(doc(db, COLLECTION_NAME, updatedTask.id), sanitizedVersion);
       return newVersion;
     } catch (error) {
        console.error("Error updating task:", error);
@@ -64,11 +85,6 @@ export const taskService = {
     try {
       const taskRef = doc(db, COLLECTION_NAME, taskId);
       await updateDoc(taskRef, { status, updatedAt: Date.now() });
-      // We return a partial object or re-fetch. 
-      // For performance, we just return what we expect.
-      // But to be type-safe with the existing interface that expects a full Task, 
-      // we might need to fetch it or rely on the caller to update local state.
-      // Here we assume the caller handles the optimistic update.
       return { id: taskId, status } as any; 
     } catch (error) {
       console.error("Error updating status:", error);

@@ -2,9 +2,10 @@
 import { Priority, Task, TaskStatus, User } from "./types";
 
 // --- AI Configuration ---
+// Updated to use available models in the current environment
 export const AI_CONFIG = {
-  MODEL_FAST: 'gemini-2.5-flash',
-  MODEL_SMART: 'gemini-2.5-flash', // Default base model
+  MODEL_FAST: 'gemini-2.0-flash', 
+  MODEL_SMART: 'gemini-2.5-pro', 
   MAX_TOKENS: 2000,
 };
 
@@ -18,15 +19,15 @@ export interface GeminiModel {
 
 export const AVAILABLE_MODELS: GeminiModel[] = [
   { 
-    id: 'gemini-2.5-flash', 
-    name: 'Gemini 2.5 Flash', 
-    description: '빠르고 효율적인 일상 업무용 모델',
+    id: 'gemini-2.0-flash', 
+    name: 'Gemini 2.0 Flash', 
+    description: '빠르고 효율적인 최신 모델 (시스템 프롬프트 지원)',
     isPro: false
   },
   { 
-    id: 'gemini-3-pro-preview', 
-    name: 'Gemini 3.0 Pro', 
-    description: '복잡한 추론과 코딩, 창의적 작업에 최적화',
+    id: 'gemini-2.5-pro', 
+    name: 'Gemini 2.5 Pro', 
+    description: '복잡한 추론과 코딩에 최적화',
     isPro: true
   }
 ];

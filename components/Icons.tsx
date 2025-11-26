@@ -55,7 +55,8 @@ import {
   ExternalLink,
   CheckSquare,
   FileCode,
-  Square
+  Square,
+  LogOut // Added
 } from 'lucide-react';
 
 export { 
@@ -114,5 +115,6 @@ export {
   ExternalLink,
   CheckSquare,
   FileCode,
-  Square
+  Square,
+  LogOut // Added
 };

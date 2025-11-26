@@ -3,7 +3,7 @@ export enum TaskStatus {
   REQUESTED = 'REQUESTED',
   CHECKED = 'CHECKED',
   WIP = 'WIP',
-  SENT = 'SENT',
+  // SENT Removed as per user request to merge into CHECKED
   FEEDBACK = 'FEEDBACK',
   DONE = 'DONE',
   CANCELLED = 'CANCELLED'
@@ -72,6 +72,7 @@ export interface Task {
   createdAt?: number; // Added for DB sorting
   updatedAt?: number; // Added for DB syncing
   styleTag?: string; // Added for AI Draft UI context
+  userId?: string; // Owner User ID (Firebase Auth UID)
 }
 
 export interface ChatMessage {

@@ -8,7 +8,10 @@ import { SettingsPage } from './components/SettingsPage';
 import { Insights } from './components/Insights';
 import { Task, TaskStatus, Priority, ViewMode } from './types';
 import { taskService } from './services/taskService'; 
-import { Plus } from './components/Icons';
+import { Plus, LogOut } from './components/Icons';
+import { LoginPage } from './components/LoginPage';
+import { auth } from './firebaseConfig';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('BOARD');
@@ -16,17 +19,41 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tempTask, setTempTask] = useState<Task | null>(null);
+  
+  // Auth State
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    loadTasks();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadTasks = async () => {
+  useEffect(() => {
+    if (user) {
+      loadTasks(user.uid);
+    } else {
+      setTasks([]);
+    }
+  }, [user]);
+
+  const loadTasks = async (userId: string) => {
     try {
-        const loadedTasks = await taskService.getAllTasks();
+        const loadedTasks = await taskService.getAllTasks(userId);
         setTasks(loadedTasks);
     } catch (error) {
         console.error("Failed to load tasks", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed", error);
     }
   };
 
@@ -47,7 +74,7 @@ export default function App() {
        } catch (error) {
          console.error("Failed to update task", error);
          alert("수정사항 저장에 실패했습니다.");
-         loadTasks(); 
+         if (user) loadTasks(user.uid); 
        }
     }
   };
@@ -59,7 +86,7 @@ export default function App() {
     } catch (error) {
       console.error("Failed to update status", error);
       alert("상태 변경에 실패했습니다.");
-      loadTasks();
+      if (user) loadTasks(user.uid);
     }
   };
   
@@ -80,6 +107,7 @@ export default function App() {
   };
 
   const handleStartCreateTask = () => {
+    if (!user) return;
     const newTaskTemplate: Task = {
         id: `t${Date.now()}`,
         title: '새로운 업무 요청',
@@ -89,11 +117,12 @@ export default function App() {
         priority: Priority.MEDIUM,
         status: TaskStatus.REQUESTED,
         dueDate: new Date().toISOString(),
-        assigneeId: 'u1',
-        requesterId: 'u2',
+        assigneeId: user.uid, // Default to self
+        requesterId: user.uid,
         subtasks: [],
         createdAt: Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        userId: user.uid // Set Owner
     };
     setTempTask(newTaskTemplate);
     setSelectedTask(null);
@@ -130,7 +159,19 @@ export default function App() {
                                 <Plus className="w-4 h-4" />
                                 <span>새 요청 만들기</span>
                             </button>
-                            <div className="w-10 h-10 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 font-medium text-sm">ME</div>
+                            
+                            <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
+                                {user?.photoURL ? (
+                                    <img src={user.photoURL} alt={user.displayName || 'User'} className="w-10 h-10 rounded-full border border-gray-200" />
+                                ) : (
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-600 font-bold text-sm">
+                                        {user?.email?.charAt(0).toUpperCase() || 'U'}
+                                    </div>
+                                )}
+                                <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 transition-colors p-2" title="로그아웃">
+                                    <LogOut className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
                     </header>
 
@@ -151,6 +192,18 @@ export default function App() {
           default:
             return null;
       }
+  }
+
+  if (authLoading) {
+      return (
+          <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+          </div>
+      );
+  }
+
+  if (!user) {
+      return <LoginPage />;
   }
 
   return (

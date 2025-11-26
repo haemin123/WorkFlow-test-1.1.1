@@ -108,7 +108,7 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
       setLocalTask(updated);
       onUpdateTask(updated);
   };
-
+  
   const handleAIAction = async (actionType: 'STRATEGY' | 'DOD' | 'SOLUTION' | 'RESOURCES') => {
       setIsLoading(true);
       try {
@@ -131,8 +131,10 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
           updatedAnalysis.lastUpdated = Date.now();
           handleUpdateField('aiAnalysis', updatedAnalysis);
 
-      } catch (e) {
+      } catch (e: any) {
           console.error("AI Action Failed", e);
+          // [Alert] Error handling
+          alert(`AI 기능 오류 발생: ${e.message || "알 수 없는 오류"}\n\n(배포 후 잠시 기다렸다가 다시 시도해 주세요.)`);
       } finally {
           setIsLoading(false);
       }
@@ -147,7 +149,10 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
     try {
         const results = await draftTaskWithAI(draftInput);
         setDraftResults(results);
-    } catch (e) { console.error(e); } 
+    } catch (e: any) { 
+        console.error(e); 
+        alert(`AI 작성 오류: ${e.message}`);
+    } 
     finally { setIsLoading(false); }
   };
 
@@ -174,7 +179,10 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
         const responseText = await chatWithGuide(history, inputMsg, localTask);
         const modelMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'model', content: responseText || "오류가 발생했습니다.", timestamp: Date.now() };
         setMessages(prev => [...prev, modelMsg]);
-    } catch (e) { console.error(e); }
+    } catch (e: any) { 
+        console.error(e);
+        alert(`AI 채팅 오류: ${e.message}`);
+    }
   };
 
 
@@ -216,6 +224,7 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                 <div className={`w-2 h-2 rounded-full 
                                     ${localTask.status === 'DONE' ? 'bg-green-500' : 
                                       localTask.status === 'IN PROGRESS' || localTask.status === 'WIP' ? 'bg-blue-500' :
+                                      localTask.status === 'CHECKED' ? 'bg-purple-500' :
                                       'bg-gray-400'}`}>
                                 </div>
                                 <select 
@@ -225,8 +234,7 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                 >
                                     <option value="REQUESTED">REQUESTED</option>
                                     <option value="WIP">IN PROGRESS</option>
-                                    <option value="CHECKED">REVIEW (검토)</option>
-                                    <option value="SENT">APPROVE (승인)</option>
+                                    <option value="CHECKED">REVIEW / APPROVE (검토/승인)</option>
                                     <option value="DONE">DONE</option>
                                 </select>
                             </div>

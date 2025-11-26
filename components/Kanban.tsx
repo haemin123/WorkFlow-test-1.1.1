@@ -95,7 +95,7 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
           // '검토/승인' 탭에서 Checked 상태와 Sent 상태를 모두 보여줍니다.
           const colTasks = processedTasks.filter((t) => {
               if (col.id === TaskStatus.CHECKED) {
-                  return t.status === TaskStatus.CHECKED || t.status === TaskStatus.SENT;
+                  return t.status === TaskStatus.CHECKED || (t.status as string) === 'SENT';
               }
               return t.status === col.id;
           });

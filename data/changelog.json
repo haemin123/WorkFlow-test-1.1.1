@@ -1,5 +1,11 @@
 [
   {
+    "version": "1.8.2",
+    "date": "2025-11-26",
+    "title": "fix(ai-service): update gemini model version and fix firestore undefined issue",
+    "description": "<h3>🐛 버그 수정</h3><ul><li><strong>Gemini 모델 버전 업데이트:</strong> <code>gemini-1.5-flash</code> 모델의 API 지원 종료(또는 접근 불가)로 인해 <code>v1beta</code> API에서 404 오류가 발생하던 문제를 확인하고, 최신 <code>gemini-2.0-flash</code> 및 <code>gemini-2.5-pro</code> 모델로 마이그레이션했습니다.</li><li><strong>Firestore 저장 오류 해결:</strong> AI가 생성한 선택적 필드(Optional fields)가 <code>undefined</code> 값을 포함할 경우 Firestore 저장 시 <code>Function updateDoc() called with invalid data</code> 오류가 발생하는 문제를 해결했습니다. 저장 직전 데이터를 정제(sanitize)하여 <code>undefined</code> 값을 자동으로 제거하는 로직을 추가했습니다.</li><li><strong>TaskStatus 타입 호환성 확보:</strong> <code>TaskStatus.SENT</code>가 타입 정의에서 제거되었음에도 런타임 코드에서 참조하여 빌드 오류가 발생하던 문제를 수정하여, 기존 데이터와의 호환성을 유지하면서 빌드가 정상적으로 수행되도록 개선했습니다.</li></ul><h3>🚀 배포 및 안정성</h3><ul><li><strong>배포 환경 검증:</strong> 수정 사항을 적용하여 프로덕션 빌드 및 Firebase Hosting 재배포를 완료했습니다.</li></ul>"
+  },
+  {
     "version": "1.8.1",
     "date": "2025-11-25",
     "title": "docs(workflow): update workflow guide with automated release process",
