@@ -91,7 +91,14 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
       {/* --- Kanban Columns (Dynamic Rendering) --- */}
       <div className="flex gap-8 h-full min-w-max pb-4 flex-1">
         {KANBAN_COLUMNS.map((col) => {
-          const colTasks = processedTasks.filter((t) => t.status === col.id);
+          // Fix: CHECKED 컬럼에 SENT(승인) 상태도 포함하여 데이터 호환성 확보
+          // '검토/승인' 탭에서 Checked 상태와 Sent 상태를 모두 보여줍니다.
+          const colTasks = processedTasks.filter((t) => {
+              if (col.id === TaskStatus.CHECKED) {
+                  return t.status === TaskStatus.CHECKED || t.status === TaskStatus.SENT;
+              }
+              return t.status === col.id;
+          });
 
           return (
             <KanbanColumn

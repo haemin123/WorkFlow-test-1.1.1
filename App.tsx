@@ -15,17 +15,19 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // Track temporary task state for creation
   const [tempTask, setTempTask] = useState<Task | null>(null);
 
-  // Load tasks from service
   useEffect(() => {
     loadTasks();
   }, []);
 
   const loadTasks = async () => {
-    const loadedTasks = await taskService.getAllTasks();
-    setTasks(loadedTasks);
+    try {
+        const loadedTasks = await taskService.getAllTasks();
+        setTasks(loadedTasks);
+    } catch (error) {
+        console.error("Failed to load tasks", error);
+    }
   };
 
   const handleTaskClick = (task: Task) => {
@@ -36,16 +38,15 @@ export default function App() {
 
   const handleUpdateTask = async (updated: Task) => {
     if (tempTask) {
-       // Creating mode: Update temp task locally
        setTempTask(updated);
     } else {
-       // Editing mode: Update real task
        setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
        setSelectedTask(updated);
        try {
          await taskService.updateTask(updated);
        } catch (error) {
          console.error("Failed to update task", error);
+         alert("수정사항 저장에 실패했습니다.");
          loadTasks(); 
        }
     }
@@ -57,11 +58,13 @@ export default function App() {
       await taskService.updateStatus(taskId, newStatus);
     } catch (error) {
       console.error("Failed to update status", error);
+      alert("상태 변경에 실패했습니다.");
       loadTasks();
     }
   };
   
   const handleDeleteTask = async (taskId: string) => {
+    const backup = [...tasks];
     setTasks(prev => prev.filter(t => t.id !== taskId));
     if (selectedTask?.id === taskId) {
         setIsModalOpen(false);
@@ -71,7 +74,8 @@ export default function App() {
         await taskService.deleteTask(taskId);
     } catch (error) {
         console.error("Failed to delete task", error);
-        loadTasks();
+        alert("삭제에 실패했습니다.");
+        setTasks(backup);
     }
   };
 
@@ -97,10 +101,15 @@ export default function App() {
   }
 
   const handleFinalizeCreateTask = async (finalTask: Task) => {
-    const createdTask = await taskService.createTask(finalTask);
-    setTasks(prev => [...prev, createdTask]);
-    setIsModalOpen(false);
-    setTempTask(null);
+    try {
+        const createdTask = await taskService.createTask(finalTask);
+        setTasks(prev => [...prev, createdTask]);
+        setIsModalOpen(false);
+        setTempTask(null);
+    } catch (error: any) {
+        console.error("Failed to create task", error);
+        alert(`저장 실패: ${error.message}`);
+    }
   }
 
   const renderContent = () => {
@@ -110,7 +119,6 @@ export default function App() {
           case 'BOARD':
               return (
                 <>
-                    {/* Board Header */}
                     <header className="h-20 flex items-center justify-between px-8 z-10 shrink-0 backdrop-blur-sm bg-white/50 sticky top-0">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">프로젝트 보드</h1>
@@ -126,7 +134,6 @@ export default function App() {
                         </div>
                     </header>
 
-                    {/* Board Content */}
                     <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 pt-4">
                         <KanbanBoard 
                             tasks={tasks} 
@@ -150,7 +157,6 @@ export default function App() {
     <Layout currentView={currentView} onNavigate={setCurrentView}>
       {renderContent()}
       
-      {/* Detail Modal (Global) */}
       {(selectedTask || tempTask) && (
         <AIModal 
           task={selectedTask || tempTask!}

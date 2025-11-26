@@ -1,36 +1,28 @@
-import { Task, TaskStatus, Priority } from "../types";
-import { INITIAL_TASKS } from "../constants";
+import { Task, TaskStatus } from "../types";
+import { db } from "../firebaseConfig";
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc,
+  query,
+  orderBy
+} from "firebase/firestore";
 
-const STORAGE_KEY = 'nexus_ai_tasks';
-
-const loadTasksFromStorage = (): Task[] => {
-  if (typeof window === 'undefined') return [...INITIAL_TASKS];
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [...INITIAL_TASKS];
-  } catch (error) {
-    console.error("Failed to load tasks from storage:", error);
-    return [...INITIAL_TASKS];
-  }
-};
-
-let memoryTasks: Task[] = loadTasksFromStorage();
-
-const saveTasksToStorage = (tasks: Task[]) => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-  } catch (error) {
-    console.error("Failed to save tasks to storage:", error);
-  }
-};
+const COLLECTION_NAME = 'tasks';
 
 export const taskService = {
   getAllTasks: async (): Promise<Task[]> => {
-    memoryTasks = loadTasksFromStorage();
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...memoryTasks]), 300);
-    });
+    try {
+      const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => doc.data() as Task);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      return [];
+    }
   },
 
   createTask: async (task: Task): Promise<Task> => {
@@ -39,36 +31,52 @@ export const taskService = {
       createdAt: Date.now(), 
       updatedAt: Date.now() 
     };
-    memoryTasks = [...memoryTasks, newTask];
-    saveTasksToStorage(memoryTasks);
-    return newTask;
+    try {
+      await setDoc(doc(db, COLLECTION_NAME, newTask.id), newTask);
+      return newTask;
+    } catch (error) {
+      console.error("Error creating task:", error);
+      throw error;
+    }
   },
 
   updateTask: async (updatedTask: Task): Promise<Task> => {
-    const taskIndex = memoryTasks.findIndex(t => t.id === updatedTask.id);
-    if (taskIndex > -1) {
-      const newVersion = { ...updatedTask, updatedAt: Date.now() };
-      memoryTasks[taskIndex] = newVersion;
-      saveTasksToStorage(memoryTasks);
+    const newVersion = { ...updatedTask, updatedAt: Date.now() };
+    try {
+      await updateDoc(doc(db, COLLECTION_NAME, updatedTask.id), newVersion);
       return newVersion;
+    } catch (error) {
+       console.error("Error updating task:", error);
+       throw error;
     }
-    throw new Error("Task not found");
   },
 
   deleteTask: async (taskId: string): Promise<void> => {
-    memoryTasks = memoryTasks.filter(t => t.id !== taskId);
-    saveTasksToStorage(memoryTasks);
+    try {
+      await deleteDoc(doc(db, COLLECTION_NAME, taskId));
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      throw error;
+    }
   },
 
   updateStatus: async (taskId: string, status: TaskStatus): Promise<Task> => {
-    const task = memoryTasks.find(t => t.id === taskId);
-    if (task) {
-      return await taskService.updateTask({ ...task, status });
+    try {
+      const taskRef = doc(db, COLLECTION_NAME, taskId);
+      await updateDoc(taskRef, { status, updatedAt: Date.now() });
+      // We return a partial object or re-fetch. 
+      // For performance, we just return what we expect.
+      // But to be type-safe with the existing interface that expects a full Task, 
+      // we might need to fetch it or rely on the caller to update local state.
+      // Here we assume the caller handles the optimistic update.
+      return { id: taskId, status } as any; 
+    } catch (error) {
+      console.error("Error updating status:", error);
+      throw error;
     }
-    throw new Error("Task not found");
   },
 
-  // New: Export data as JSON file
+  // Export data as JSON file (Helper)
   exportTasks: async (): Promise<void> => {
     const tasks = await taskService.getAllTasks();
     const dataStr = JSON.stringify(tasks, null, 2);

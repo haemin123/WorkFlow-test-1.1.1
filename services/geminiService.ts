@@ -1,27 +1,55 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app } from "../firebaseConfig";
 import { Task, AIAnalysis, Subtask, Priority, Resource, AcceptanceCriterion } from "../types";
 import { AI_CONFIG } from "../constants";
 import { PromptTemplates } from "./prompts";
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+// Initialize Cloud Functions (Region must match backend: us-west1)
+const functions = getFunctions(app, "us-west1");
+const vertexAIProxy = httpsCallable(functions, 'vertexAIProxy');
 
-// Helper for JSON generation to reduce duplication
-async function generateJSON<T>(prompt: string, schema: any): Promise<T | null> {
+// --- Types for Schema Definition (Simplified for Client) ---
+const Type = {
+  STRING: "STRING",
+  NUMBER: "NUMBER",
+  INTEGER: "INTEGER",
+  BOOLEAN: "BOOLEAN",
+  ARRAY: "ARRAY",
+  OBJECT: "OBJECT"
+};
+
+// Helper to call Backend Vertex AI
+async function callVertexAI<T>(params: { 
+    prompt: string, 
+    schema?: any, 
+    history?: any[], 
+    model?: string 
+}): Promise<T | string> {
     try {
-        const response = await ai.models.generateContent({
-            model: AI_CONFIG.MODEL_FAST,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: schema
-            }
+        const result = await vertexAIProxy({
+            model: params.model || AI_CONFIG.MODEL_SMART,
+            prompt: params.prompt,
+            schema: params.schema,
+            history: params.history
         });
-        if (response.text) {
-            return JSON.parse(response.text) as T;
+        
+        const data = result.data as any;
+        if (!data || !data.result) {
+            throw new Error("AI response is empty");
         }
-        return null;
+        
+        const text = data.result;
+
+        // If schema was provided, parse JSON
+        if (params.schema) {
+            // Clean up markdown code blocks if present
+            const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
+            return JSON.parse(cleanText) as T;
+        }
+        
+        return text;
     } catch (error) {
-        console.error("Gemini JSON Gen Error:", error);
+        console.error("Vertex AI Proxy Error:", error);
         throw error;
     }
 }
@@ -47,7 +75,7 @@ export const draftTaskWithAI = async (rawInput: string): Promise<Partial<Task>[]
     }
   };
 
-  const data = await generateJSON<any[]>(prompt, schema);
+  const data = await callVertexAI<any[]>({ prompt, schema, model: AI_CONFIG.MODEL_FAST });
   
   if (!data || !Array.isArray(data)) throw new Error("Draft generation failed");
 
@@ -90,7 +118,7 @@ export const analyzeTaskWithAI = async (task: Task): Promise<AIAnalysis> => {
     }
   };
 
-  const data = await generateJSON<any>(prompt, schema);
+  const data = await callVertexAI<any>({ prompt, schema });
   if (data) return { ...data, lastUpdated: Date.now() };
   throw new Error("Analysis failed");
 };
@@ -111,13 +139,12 @@ export const generateSubtasksAI = async (task: Task): Promise<Omit<Subtask, 'id'
     }
   };
 
-  const data = await generateJSON<any[]>(prompt, schema);
+  const data = await callVertexAI<any[]>({ prompt, schema });
   return data || [];
 };
 
 /**
  * Generates Acceptance Criteria (DoD)
- * Returns structured objects for checklist functionality.
  */
 export const generateAcceptanceCriteriaAI = async (task: Task): Promise<AcceptanceCriterion[]> => {
     const prompt = PromptTemplates.generateAcceptanceCriteria(task);
@@ -125,9 +152,8 @@ export const generateAcceptanceCriteriaAI = async (task: Task): Promise<Acceptan
         type: Type.ARRAY,
         items: { type: Type.STRING }
     };
-    const rawData = await generateJSON<string[]>(prompt, schema);
+    const rawData = await callVertexAI<string[]>({ prompt, schema });
     
-    // Map strings to AcceptanceCriterion objects
     if (!rawData) return [];
 
     return rawData.map((content, idx) => ({
@@ -142,12 +168,9 @@ export const generateAcceptanceCriteriaAI = async (task: Task): Promise<Acceptan
  */
 export const generateSolutionDraftAI = async (task: Task): Promise<string> => {
     const prompt = PromptTemplates.generateSolutionDraft(task);
-    // Use standard generate for markdown output
-    const response = await ai.models.generateContent({
-        model: AI_CONFIG.MODEL_SMART, // Use smarter model for coding
-        contents: prompt
-    });
-    return response.text || "";
+    // Markdown response (no schema)
+    const result = await callVertexAI<string>({ prompt });
+    return typeof result === 'string' ? result : "";
 };
 
 /**
@@ -166,7 +189,7 @@ export const recommendResourcesAI = async (task: Task): Promise<Resource[]> => {
             }
         }
     };
-    const data = await generateJSON<Resource[]>(prompt, schema);
+    const data = await callVertexAI<Resource[]>({ prompt, schema });
     return data || [];
 };
 
@@ -175,27 +198,38 @@ export const recommendResourcesAI = async (task: Task): Promise<Resource[]> => {
  * Chat with the AI guide about the specific task.
  */
 export const chatWithGuide = async (history: {role: string, parts: {text: string}[]}[], message: string, contextTask: Task) => {
-    const chat = ai.chats.create({
-        model: AI_CONFIG.MODEL_SMART,
-        history: [
-            {
-                role: 'user',
-                parts: [{ text: PromptTemplates.chatGuideSystem(contextTask) }]
-            },
-            {
-                role: 'model',
-                parts: [{ text: "네, 알겠습니다. 업무 진행을 도와드리겠습니다." }]
-            },
-            ...history
-        ]
-    });
+    // Construct history for backend
+    const systemPrompt = PromptTemplates.chatGuideSystem(contextTask);
+    
+    // Backend expects history without system prompt usually, or we prepend it
+    // Here we just send the message and history. 
+    // Ideally, system instruction should be sent separately if backend supports it.
+    // For now, let's prepend system prompt to history as user message if it's new chat
+    
+    const chatHistory = [
+        {
+            role: 'user',
+            parts: [{ text: systemPrompt }]
+        },
+        {
+            role: 'model',
+            parts: [{ text: "네, 알겠습니다. 업무 진행을 도와드리겠습니다." }]
+        },
+        ...history
+    ];
 
-    const result = await chat.sendMessage({ message });
-    return result.text;
+    const result = await callVertexAI<string>({ 
+        prompt: message, 
+        history: chatHistory 
+    });
+    
+    return typeof result === 'string' ? result : "";
 }
 
 /**
- * General purpose streaming chat for Gemini Pro Page with Multimodal support
+ * General purpose streaming chat for Gemini Pro Page
+ * Note: Streaming is harder with Cloud Functions onCall. 
+ * We will use simple request/response for now.
  */
 export const getGeminiChatStream = async (
     history: {role: string, parts: {text?: string, inlineData?: any}[]}[], 
@@ -204,9 +238,8 @@ export const getGeminiChatStream = async (
     imageBase64?: string,
     imageMimeType?: string
 ) => {
-    const chat = ai.chats.create({
-        model: modelId,
-        history: [
+    // Construct history
+    const initialHistory = [
            {
                 role: 'user',
                 parts: [{ text: "당신은 Nexus AI 플랫폼의 지능형 어시스턴트 Gemini입니다. 사용자의 업무 생산성을 높이고, 창의적인 아이디어를 제공하며, 친절하고 전문적인 태도로 대화하세요. 한국어로 답변하세요." }]
@@ -216,25 +249,29 @@ export const getGeminiChatStream = async (
                 parts: [{ text: "반갑습니다! Nexus AI Gemini입니다. 무엇을 도와드릴까요?" }]
             },
             ...history
-        ]
+    ];
+
+    // Handle Multimodal input (simplification: append image description to prompt if possible, 
+    // or backend needs to handle inlineData. 
+    // Current backend implementation in index.ts might need update for images.
+    // For now, assume text only or backend handles it if passed correctly.)
+    
+    // We are using simple response, not stream, because onCall streaming is complex.
+    // To mock the stream interface expected by UI:
+    const result = await callVertexAI<string>({
+        prompt: message,
+        history: initialHistory,
+        model: modelId
     });
 
-    // Construct content parts
-    const parts: any[] = [];
-    if (imageBase64 && imageMimeType) {
-        parts.push({
-            inlineData: {
-                data: imageBase64,
-                mimeType: imageMimeType
-            }
-        });
-    }
-    if (message) {
-        parts.push({ text: message });
-    }
+    const text = typeof result === 'string' ? result : "";
 
-    // Use parts structure for multimodal
-    return await chat.sendMessageStream({ message: parts });
+    // Return an object that looks like a stream response for compatibility
+    return {
+        stream: (async function* () {
+            yield { text: () => text };
+        })()
+    };
 };
 
 /**
@@ -242,15 +279,6 @@ export const getGeminiChatStream = async (
  */
 export const getWeeklyInsight = async (tasks: Task[], teamStats: any): Promise<string> => {
     const prompt = PromptTemplates.generateInsights(tasks, teamStats);
-    
-    try {
-        const response = await ai.models.generateContent({
-            model: AI_CONFIG.MODEL_SMART,
-            contents: prompt
-        });
-        return response.text || "인사이트를 생성할 수 없습니다.";
-    } catch (error) {
-        console.error("Insight Gen Error:", error);
-        return "현재 AI 인사이트를 불러올 수 없습니다.";
-    }
+    const result = await callVertexAI<string>({ prompt });
+    return typeof result === 'string' ? result : "인사이트를 생성할 수 없습니다.";
 };

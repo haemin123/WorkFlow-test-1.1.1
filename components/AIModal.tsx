@@ -213,7 +213,11 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                             <span className="text-xs font-bold text-gray-400 uppercase">진행 상태</span>
                             <div className="mt-2 flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full ${localTask.status === 'DONE' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
+                                <div className={`w-2 h-2 rounded-full 
+                                    ${localTask.status === 'DONE' ? 'bg-green-500' : 
+                                      localTask.status === 'IN PROGRESS' || localTask.status === 'WIP' ? 'bg-blue-500' :
+                                      'bg-gray-400'}`}>
+                                </div>
                                 <select 
                                     value={localTask.status}
                                     onChange={(e) => handleUpdateField('status', e.target.value)}
@@ -221,6 +225,8 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                 >
                                     <option value="REQUESTED">REQUESTED</option>
                                     <option value="WIP">IN PROGRESS</option>
+                                    <option value="CHECKED">REVIEW (검토)</option>
+                                    <option value="SENT">APPROVE (승인)</option>
                                     <option value="DONE">DONE</option>
                                 </select>
                             </div>

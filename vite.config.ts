@@ -6,11 +6,9 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 3000,
         host: '0.0.0.0',
-        hmr: {
-          clientPort: 9000,
-        },
+        // Let the CLI argument or default handle the port
+        // Remove hardcoded HMR port to fix preview in cloud IDEs
       },
       plugins: [react()],
       define: {
