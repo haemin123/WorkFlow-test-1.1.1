@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Task, Subtask, Resource, Priority, ChatMessage } from '../types';
+import { Task, Subtask, Resource, Priority, ChatMessage, TaskStatus } from '../types';
 import { 
     analyzeTaskWithAI, 
     generateSubtasksAI, 
@@ -13,7 +12,7 @@ import {
 import { 
     LayoutDashboard, ListTodo, BrainCircuit, CheckCircle2, 
     BookOpen, Code2, AlertCircle, X, Loader2, PenLine, 
-    Calendar, User, Trash2, Wand2, Sparkles, MessageSquare, CheckSquare, Square
+    Calendar, User, Trash2, Wand2, Sparkles, MessageSquare, CheckSquare, Square, Archive, RotateCcw
 } from './Icons';
 import { UI_TEXTS } from '../constants';
 import { DraftView, ChatView } from './AIViews';
@@ -26,17 +25,20 @@ interface AIModalProps {
   onUpdateTask: (updatedTask: Task) => void;
   onCreateTask?: (newTask: Task) => void;
   onDeleteTask?: (taskId: string) => void;
+  onRestoreTask?: (taskId: string) => void; 
 }
 
 type TabType = 'DETAILS' | 'HISTORY' | 'DRAFT' | 'STRATEGY' | 'DOD' | 'SOLUTION' | 'RESOURCES' | 'CHAT';
 
 // --- Sub Components ---
 
-const SidebarTab = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
+const SidebarTab = ({ active, onClick, icon, label, disabled }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, disabled?: boolean }) => (
     <button 
         onClick={onClick}
+        disabled={disabled}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-1 text-sm font-medium
-            ${active ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-100/50 hover:text-gray-700'}`}
+            ${active ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-100/50 hover:text-gray-700'}
+            ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
         {icon}
         <span>{label}</span>
@@ -63,7 +65,7 @@ const ContentHeader = ({ title, action }: { title: string, action?: React.ReactN
 
 // --- Main Modal Component ---
 
-export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdateTask, onCreateTask, onDeleteTask }) => {
+export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdateTask, onCreateTask, onDeleteTask, onRestoreTask }) => {
   const [activeTab, setActiveTab] = useState<TabType>('DETAILS');
   const [isLoading, setIsLoading] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -78,13 +80,20 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMsg, setInputMsg] = useState('');
 
-  // Local task state
+  // Read-only logic for archived/trashed items
+  const isReadOnly = task.status === TaskStatus.ARCHIVED || task.status === TaskStatus.TRASH;
+  
+  // Local task state - Synced with props
   const [localTask, setLocalTask] = useState<Task>(task);
 
   useEffect(() => {
+    // Sync localTask whenever task prop changes (crucial for live AI updates)
+    setLocalTask(task);
+  }, [task]);
+
+  useEffect(() => {
     if (isOpen) {
-        setLocalTask(task);
-        // Check creation mode
+        // Initial setup only when modal opens
         const isNew = task.title === UI_TEXTS.NEW_TASK_TITLE && (!task.description || task.description === '');
         setIsCreationMode(isNew);
 
@@ -97,19 +106,21 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
             setActiveTab('DETAILS');
         }
     }
-  }, [isOpen, task.id]);
+  }, [isOpen, task.id]); // Only runs when modal opens/closes or task ID changes (not on every update)
 
   if (!isOpen) return null;
 
   // --- Handlers ---
 
   const handleUpdateField = (field: keyof Task, value: any) => {
+      if (isReadOnly) return;
       const updated = { ...localTask, [field]: value };
       setLocalTask(updated);
       onUpdateTask(updated);
   };
   
   const handleAIAction = async (actionType: 'STRATEGY' | 'DOD' | 'SOLUTION' | 'RESOURCES') => {
+      if (isReadOnly) return;
       setIsLoading(true);
       try {
           let updatedAnalysis = localTask.aiAnalysis ? { ...localTask.aiAnalysis } : { lastUpdated: Date.now() };
@@ -133,8 +144,7 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
 
       } catch (e: any) {
           console.error("AI Action Failed", e);
-          // [Alert] Error handling
-          alert(`AI 기능 오류 발생: ${e.message || "알 수 없는 오류"}\n\n(배포 후 잠시 기다렸다가 다시 시도해 주세요.)`);
+          alert(`AI 기능 오류 발생: ${e.message || "알 수 없는 오류"}`);
       } finally {
           setIsLoading(false);
       }
@@ -190,33 +200,14 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
 
   const renderContent = () => {
       const analysis = localTask.aiAnalysis || { lastUpdated: 0 };
+      const isGenerating = localTask.aiStatus === 'GENERATING';
       
-      // If we are in creation mode (Split View), handle tabs differently
-      if (isCreationMode) {
-           switch (activeTab) {
-               case 'DRAFT':
-                    return (
-                        <DraftView 
-                            input={draftInput}
-                            setInput={setDraftInput}
-                            onGenerate={handleSmartDraft}
-                            results={draftResults}
-                            selectedIdx={selectedDraftIndex}
-                            onSelect={handleSelectDraft}
-                        />
-                    );
-                case 'CHAT':
-                     return <ChatView messages={messages} inputMsg={inputMsg} setInputMsg={setInputMsg} onSend={handleSendMessage} />;
-                default: return null;
-           }
-      }
+      // Removed: isCreationMode handling inside renderContent as it's now handled in the main return
 
-      // Normal Detail Mode Content
       switch (activeTab) {
         case 'DETAILS':
             return (
                 <div className="animate-fade-in space-y-8">
-                     {/* Meta Cards */}
                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                             <span className="text-xs font-bold text-gray-400 uppercase">진행 상태</span>
@@ -225,17 +216,22 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                     ${localTask.status === 'DONE' ? 'bg-green-500' : 
                                       localTask.status === 'IN PROGRESS' || localTask.status === 'WIP' ? 'bg-blue-500' :
                                       localTask.status === 'CHECKED' ? 'bg-purple-500' :
+                                      localTask.status === TaskStatus.ARCHIVED ? 'bg-indigo-500' :
+                                      localTask.status === TaskStatus.TRASH ? 'bg-red-500' :
                                       'bg-gray-400'}`}>
                                 </div>
                                 <select 
                                     value={localTask.status}
                                     onChange={(e) => handleUpdateField('status', e.target.value)}
-                                    className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer w-full"
+                                    disabled={isReadOnly}
+                                    className="bg-transparent text-sm font-bold text-gray-700 outline-none w-full disabled:cursor-not-allowed disabled:text-gray-400"
                                 >
                                     <option value="REQUESTED">REQUESTED</option>
                                     <option value="WIP">IN PROGRESS</option>
-                                    <option value="CHECKED">REVIEW / APPROVE (검토/승인)</option>
+                                    <option value="CHECKED">REVIEW / APPROVE</option>
                                     <option value="DONE">DONE</option>
+                                    {isReadOnly && <option value={TaskStatus.ARCHIVED}>ARCHIVED</option>}
+                                    {isReadOnly && <option value={TaskStatus.TRASH}>TRASH</option>}
                                 </select>
                             </div>
                         </div>
@@ -245,7 +241,8 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                 <select 
                                     value={localTask.priority}
                                     onChange={(e) => handleUpdateField('priority', e.target.value)}
-                                    className={`bg-transparent text-sm font-bold outline-none cursor-pointer uppercase w-full
+                                    disabled={isReadOnly}
+                                    className={`bg-transparent text-sm font-bold outline-none uppercase w-full disabled:cursor-not-allowed disabled:text-gray-400
                                         ${localTask.priority === 'HIGH' ? 'text-red-600' : localTask.priority === 'MEDIUM' ? 'text-orange-600' : 'text-blue-600'}`}
                                 >
                                     <option value="HIGH">HIGH</option>
@@ -257,8 +254,14 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
                             <span className="text-xs font-bold text-gray-400 uppercase">담당자</span>
                             <div className="mt-2 flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">ME</div>
-                                <span className="text-sm font-bold text-gray-700">홍길동</span>
+                                {localTask.assigneeAvatar ? (
+                                    <img src={localTask.assigneeAvatar} alt={localTask.assigneeName} className="w-6 h-6 rounded-full object-cover border border-gray-200" />
+                                ) : (
+                                    <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
+                                        {localTask.assigneeName ? localTask.assigneeName.charAt(0).toUpperCase() : 'ME'}
+                                    </div>
+                                )}
+                                <span className="text-sm font-bold text-gray-700">{localTask.assigneeName || '담당자 미정'}</span>
                             </div>
                         </div>
                          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
@@ -267,23 +270,24 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                                 type="date"
                                 value={localTask.dueDate ? localTask.dueDate.split('T')[0] : ''}
                                 onChange={(e) => handleUpdateField('dueDate', e.target.value)}
-                                className="mt-2 block w-full bg-transparent text-sm font-bold text-gray-700 outline-none"
+                                readOnly={isReadOnly}
+                                className="mt-2 block w-full bg-transparent text-sm font-bold text-gray-700 outline-none disabled:cursor-not-allowed disabled:text-gray-400"
                             />
                         </div>
                      </div>
 
-                     {/* Description */}
                      <div>
                         <h3 className="text-lg font-bold text-gray-900 mb-4">업무 설명</h3>
                         <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 min-h-[200px] relative group">
                             <textarea 
                                 value={localTask.description}
                                 onChange={(e) => handleUpdateField('description', e.target.value)}
-                                className="w-full h-full bg-transparent border-none resize-none focus:ring-0 text-gray-600 leading-relaxed outline-none"
+                                readOnly={isReadOnly}
+                                className="w-full h-full bg-transparent border-none resize-none focus:ring-0 text-gray-600 leading-relaxed outline-none disabled:cursor-not-allowed"
                                 placeholder="업무 설명을 입력하세요..."
                                 rows={8}
                             />
-                            <PenLine className="absolute top-4 right-4 w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"/>
+                            {!isReadOnly && <PenLine className="absolute top-4 right-4 w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"/>}
                         </div>
                      </div>
                 </div>
@@ -303,16 +307,27 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     <ContentHeader 
                         title="실행 전략 (Execution Plan)" 
                         action={
-                            <button onClick={() => handleAIAction('STRATEGY')} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <BrainCircuit className="w-4 h-4"/>}
-                                <span>AI 생성하기</span>
-                            </button>
+                            !isReadOnly && (
+                                <button onClick={() => handleAIAction('STRATEGY')} disabled={isLoading || isGenerating} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors disabled:opacity-50">
+                                    {isLoading || isGenerating ? <Loader2 className="w-4 h-4 animate-spin"/> : <BrainCircuit className="w-4 h-4"/>}
+                                    <span>{isGenerating && !analysis.executionPlan?.length ? 'AI 생성 중...' : 'AI 생성하기'}</span>
+                                </button>
+                            )
                         }
                     />
                     {(!analysis.executionPlan || analysis.executionPlan.length === 0) ? (
                         <div className="text-center py-20 text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                            <BrainCircuit className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
-                            <p>아직 생성된 실행 전략이 없습니다.<br/>AI에게 전략 수립을 요청해보세요.</p>
+                            {isGenerating ? (
+                                <div className="flex flex-col items-center gap-3">
+                                    <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+                                    <p className="text-blue-500 font-medium">AI가 실행 전략을 수립하고 있습니다...</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <BrainCircuit className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
+                                    <p>아직 생성된 실행 전략이 없습니다.</p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="space-y-3">
@@ -335,24 +350,37 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     <ContentHeader 
                         title="완료 조건 (Definition of Done)" 
                         action={
-                            <button onClick={() => handleAIAction('DOD')} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-bold hover:bg-purple-100 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}
-                                <span>AI 생성하기</span>
-                            </button>
+                            !isReadOnly && (
+                                <button onClick={() => handleAIAction('DOD')} disabled={isLoading || isGenerating} className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-bold hover:bg-purple-100 transition-colors disabled:opacity-50">
+                                    {isLoading || isGenerating ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}
+                                    <span>{isGenerating && !analysis.acceptanceCriteria?.length ? 'AI 생성 중...' : 'AI 생성하기'}</span>
+                                </button>
+                            )
                         }
                     />
                      {(!analysis.acceptanceCriteria || analysis.acceptanceCriteria.length === 0) ? (
                         <div className="text-center py-20 text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                            <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
-                            <p>완료 조건이 설정되지 않았습니다.<br/>QA 통과 기준을 AI에게 물어보세요.</p>
+                            {isGenerating ? (
+                                <div className="flex flex-col items-center gap-3">
+                                    <Loader2 className="w-10 h-10 text-purple-500 animate-spin" />
+                                    <p className="text-purple-500 font-medium">AI가 완료 조건을 생성하고 있습니다...</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
+                                    <p>완료 조건이 설정되지 않았습니다.</p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <ul className="space-y-3">
                             {analysis.acceptanceCriteria.map((criterion, idx) => (
                                 <li key={criterion.id} 
-                                    className={`p-4 rounded-xl border transition-all cursor-pointer group flex items-start gap-4
-                                        ${criterion.checked ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200 hover:border-purple-200 hover:shadow-sm'}`}
+                                    className={`p-4 rounded-xl border transition-all flex items-start gap-4
+                                        ${criterion.checked ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200 hover:border-purple-200 hover:shadow-sm'}
+                                        ${!isReadOnly ? 'cursor-pointer group' : ''}`}
                                     onClick={() => {
+                                        if (isReadOnly) return;
                                         const newCriteria = analysis.acceptanceCriteria!.map(c => 
                                             c.id === criterion.id ? { ...c, checked: !c.checked } : c
                                         );
@@ -379,10 +407,12 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     <ContentHeader 
                         title="솔루션 초안 (Solution Draft)" 
                         action={
-                            <button onClick={() => handleAIAction('SOLUTION')} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Code2 className="w-4 h-4"/>}
-                                <span>AI 초안 작성</span>
-                            </button>
+                            !isReadOnly && (
+                                <button onClick={() => handleAIAction('SOLUTION')} disabled={isLoading || isGenerating} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-colors disabled:opacity-50">
+                                    {isLoading || isGenerating ? <Loader2 className="w-4 h-4 animate-spin"/> : <Code2 className="w-4 h-4"/>}
+                                    <span>{isGenerating && !analysis.solutionDraft ? 'AI 생성 중...' : 'AI 초안 작성'}</span>
+                                </button>
+                            )
                         }
                     />
                     <div className="flex-1 bg-gray-900 rounded-2xl p-6 overflow-y-auto text-gray-300 font-mono text-sm leading-relaxed shadow-inner">
@@ -390,8 +420,17 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                              <pre className="whitespace-pre-wrap">{analysis.solutionDraft}</pre>
                         ) : (
                              <div className="h-full flex flex-col items-center justify-center text-gray-600">
-                                 <Code2 className="w-12 h-12 mb-4 opacity-50"/>
-                                 <p>기술적인 구현 가이드를 작성해드립니다.</p>
+                                 {isGenerating ? (
+                                    <div className="flex flex-col items-center gap-3">
+                                        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+                                        <p className="text-emerald-500 font-medium">AI가 솔루션 초안을 작성 중입니다...</p>
+                                    </div>
+                                 ) : (
+                                    <>
+                                        <Code2 className="w-12 h-12 mb-4 opacity-50"/>
+                                        <p>기술적인 구현 가이드를 작성해드립니다.</p>
+                                    </>
+                                 )}
                              </div>
                         )}
                     </div>
@@ -404,10 +443,12 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     <ContentHeader 
                         title="추천 학습 자료 (Resources)" 
                         action={
-                            <button onClick={() => handleAIAction('RESOURCES')} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors disabled:opacity-50">
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <BookOpen className="w-4 h-4"/>}
-                                <span>AI 자료 검색</span>
-                            </button>
+                            !isReadOnly && (
+                                <button onClick={() => handleAIAction('RESOURCES')} disabled={isLoading || isGenerating} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                                    {isLoading || isGenerating ? <Loader2 className="w-4 h-4 animate-spin"/> : <BookOpen className="w-4 h-4"/>}
+                                    <span>{isGenerating && !analysis.learningResources?.length ? 'AI 생성 중...' : 'AI 자료 검색'}</span>
+                                </button>
+                            )
                         }
                     />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -425,8 +466,17 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                         ))}
                          {(!analysis.learningResources || analysis.learningResources.length === 0) && (
                             <div className="col-span-2 text-center py-20 text-gray-400 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                                <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
-                                <p>관련된 학습 자료를 찾지 못했습니다.<br/>AI에게 추천을 요청해보세요.</p>
+                                {isGenerating ? (
+                                    <div className="flex flex-col items-center gap-3">
+                                        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+                                        <p className="text-indigo-500 font-medium">AI가 자료를 검색하고 있습니다...</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-300"/>
+                                        <p>관련된 학습 자료를 찾지 못했습니다.</p>
+                                    </>
+                                )}
                             </div>
                          )}
                     </div>
@@ -437,7 +487,7 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
             return (
                  <div className="animate-fade-in h-[600px]">
                      <ContentHeader title="AI 가이드 (Assistant)" />
-                     <ChatView messages={messages} inputMsg={inputMsg} setInputMsg={setInputMsg} onSend={handleSendMessage} />
+                     <ChatView messages={messages} inputMsg={inputMsg} setInputMsg={setInputMsg} onSend={handleSendMessage} disabled={isReadOnly} />
                  </div>
             );
           
@@ -450,46 +500,43 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
         <div className={`bg-white rounded-3xl shadow-2xl overflow-hidden flex animate-fade-in border border-white/50
              ${isCreationMode ? 'w-full max-w-[1400px] h-[90vh]' : 'w-full max-w-6xl h-[90vh] flex-col'}`}>
             
-            {/* --- CASE A: CREATION MODE (Split View) --- */}
-            {isCreationMode && (
+            {/* CASE A: CREATION MODE (Split View - Restored) */}
+            {isCreationMode ? (
                 <>
                     {/* Left Panel: Editor */}
-                    <div className="w-[35%] min-w-[350px] bg-gray-50/80 backdrop-blur-sm border-r border-gray-100 flex flex-col h-full">
-                         <div className="h-16 px-6 border-b border-gray-100 flex items-center justify-between shrink-0">
+                    <div className="w-[40%] min-w-[400px] bg-white border-r border-gray-100 flex flex-col h-full relative z-10">
+                         <div className="h-20 px-8 border-b border-gray-100 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wide bg-orange-50 text-orange-600 border border-orange-100">
-                                    {localTask.priority}
-                                </span>
-                                <span className="text-xs font-bold text-gray-400">{localTask.product || '일반'}</span>
+                                <span className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] font-bold rounded uppercase tracking-wide">NEW TASK</span>
                             </div>
                         </div>
 
                         <div className="flex-1 p-8 overflow-y-auto">
                             <div className="mb-6 relative group">
-                                <textarea
+                                <input
                                     value={localTask.title === UI_TEXTS.NEW_TASK_TITLE ? '' : localTask.title}
                                     onChange={(e) => handleUpdateField('title', e.target.value)}
-                                    className="w-full text-3xl font-bold text-gray-900 bg-transparent border-none focus:ring-0 p-0 resize-none overflow-hidden placeholder-gray-300 outline-none leading-tight"
+                                    className="w-full text-4xl font-bold text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-200 outline-none leading-tight"
                                     placeholder="업무 제목을 입력하세요"
-                                    rows={2}
+                                    autoFocus
                                 />
-                                <PenLine className="absolute top-2 right-0 w-5 h-5 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                             </div>
 
-                            <div className="mb-8 relative group h-[calc(100%-100px)]">
+                            <div className="relative group h-full">
                                 <textarea 
                                     value={localTask.description}
                                     onChange={(e) => handleUpdateField('description', e.target.value)}
-                                    className="w-full h-full text-base text-gray-600 leading-relaxed bg-transparent border-none focus:ring-0 p-0 resize-none placeholder-gray-300 outline-none"
+                                    className="w-full h-[calc(100%-100px)] text-lg text-gray-600 leading-relaxed bg-transparent border-none focus:ring-0 p-0 resize-none placeholder-gray-200 outline-none"
                                     placeholder={UI_TEXTS.NEW_TASK_DESC_PLACEHOLDER}
                                 />
                             </div>
                         </div>
 
-                         <div className="p-6 border-t border-gray-100 bg-white/50">
+                         <div className="p-6 border-t border-gray-100 bg-white">
                             <button 
                                 onClick={() => onCreateTask && onCreateTask(localTask)}
-                                className="w-full py-3.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center justify-center gap-2"
+                                disabled={!localTask.title.trim() || localTask.title === UI_TEXTS.NEW_TASK_TITLE}
+                                className="w-full py-4 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <CheckCircle2 className="w-5 h-5"/>
                                 <span>업무 생성 완료</span>
@@ -498,33 +545,37 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     </div>
 
                     {/* Right Panel: AI Tools */}
-                    <div className="flex-1 bg-white flex flex-col h-full relative">
-                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                    <div className="flex-1 bg-gray-50/50 flex flex-col h-full relative">
+                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
                             <div className="flex gap-1">
-                                <TabButton active={activeTab === 'DRAFT'} onClick={() => setActiveTab('DRAFT')} icon={<Wand2 className="w-4 h-4" />} label="AI 작성 (Draft)" />
-                                <TabButton active={activeTab === 'CHAT'} onClick={() => setActiveTab('CHAT')} icon={<Sparkles className="w-4 h-4" />} label="가이드" />
+                                {/* Only DraftView, no tabs */}
+                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-gray-900 shadow-sm ring-1 ring-black/5">
+                                    <Wand2 className="w-4 h-4" />
+                                    <span className="text-sm font-medium">AI 작성 (Draft)</span>
+                                </div>
+                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-gray-400">
+                                    <Sparkles className="w-4 h-4" />
+                                    <span className="text-sm font-medium">가이드</span>
+                                </div>
                             </div>
                             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors">
                                 <X className="w-6 h-6"/>
                             </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-8 bg-gray-50/30 relative">
-                             {isLoading && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-20 backdrop-blur-sm transition-opacity">
-                                    <div className="flex flex-col items-center gap-4">
-                                        <div className="w-12 h-12 rounded-full border-4 border-gray-100 border-t-indigo-600 animate-spin"></div>
-                                        <span className="text-sm font-medium text-indigo-600 animate-pulse">AI가 업무를 기획하고 있습니다...</span>
-                                    </div>
-                                </div>
-                             )}
-                             {renderContent()}
+                        <div className="flex-1 overflow-y-auto p-8">
+                             <DraftView 
+                                 input={draftInput}
+                                 setInput={setDraftInput}
+                                 onGenerate={handleSmartDraft}
+                                 results={draftResults}
+                                 selectedIdx={selectedDraftIndex}
+                                 onSelect={handleSelectDraft}
+                             />
                         </div>
                     </div>
                 </>
-            )}
-
-            {/* --- CASE B: DETAIL MODE (Sidebar Layout) --- */}
-            {!isCreationMode && (
+            ) : (
+                // CASE B: DETAIL MODE (Existing)
                 <>
                     {/* Header */}
                     <div className="h-20 px-8 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white z-10">
@@ -532,30 +583,29 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                             <span className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] font-bold rounded uppercase tracking-wide">
                                 {localTask.product || 'PROJECT'}
                             </span>
-                            {isEditingTitle ? (
-                                <input 
-                                    value={localTask.title}
-                                    onChange={(e) => handleUpdateField('title', e.target.value)}
-                                    onBlur={() => setIsEditingTitle(false)}
-                                    onKeyDown={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
-                                    autoFocus
-                                    className="text-2xl font-bold text-gray-900 outline-none w-full bg-transparent"
-                                />
-                            ) : (
-                                <h1 
-                                    className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-gray-600 transition-colors truncate"
-                                    onClick={() => setIsEditingTitle(true)}
-                                >
-                                    {localTask.title}
-                                </h1>
-                            )}
+                            <h1 
+                                className={`text-2xl font-bold text-gray-900 truncate ${!isReadOnly && 'cursor-pointer hover:text-gray-600 transition-colors'}`}
+                                onClick={() => !isReadOnly && setIsEditingTitle(true)}
+                            >
+                                {localTask.title}
+                            </h1>
                         </div>
                         <div className="flex items-center gap-2 ml-4">
-                            {onDeleteTask && (
-                                <button onClick={() => onDeleteTask(task.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="삭제">
+                            {/* Restore Button */}
+                            {isReadOnly && onRestoreTask && (
+                                <button onClick={() => onRestoreTask(task.id)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors">
+                                    <RotateCcw className="w-4 h-4"/>
+                                    <span>보드로 복구</span>
+                                </button>
+                            )}
+
+                            {/* Delete Button */}
+                            {!isReadOnly && onDeleteTask && (
+                                <button onClick={() => onDeleteTask(task.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="휴지통으로 이동">
                                     <Trash2 className="w-5 h-5"/>
                                 </button>
                             )}
+
                             <div className="w-px h-6 bg-gray-200 mx-2"></div>
                             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors">
                                 <X className="w-6 h-6"/>
@@ -570,16 +620,15 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                              <div className="mb-6">
                                 <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 px-4">기본 정보</h3>
                                 <SidebarTab active={activeTab === 'DETAILS'} onClick={() => setActiveTab('DETAILS')} icon={<LayoutDashboard className="w-4 h-4"/>} label="업무 상세" />
-                                <SidebarTab active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Calendar className="w-4 h-4"/>} label="활동 내역" />
                             </div>
                             
                             <div>
                                 <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 px-4">AI Tools</h3>
-                                <SidebarTab active={activeTab === 'STRATEGY'} onClick={() => setActiveTab('STRATEGY')} icon={<ListTodo className="w-4 h-4"/>} label="실행 전략" />
-                                <SidebarTab active={activeTab === 'DOD'} onClick={() => setActiveTab('DOD')} icon={<CheckCircle2 className="w-4 h-4"/>} label="완료 조건 (DoD)" />
-                                <SidebarTab active={activeTab === 'SOLUTION'} onClick={() => setActiveTab('SOLUTION')} icon={<Code2 className="w-4 h-4"/>} label="솔루션 초안" />
-                                <SidebarTab active={activeTab === 'RESOURCES'} onClick={() => setActiveTab('RESOURCES')} icon={<BookOpen className="w-4 h-4"/>} label="학습 자료" />
-                                <SidebarTab active={activeTab === 'CHAT'} onClick={() => setActiveTab('CHAT')} icon={<MessageSquare className="w-4 h-4"/>} label="AI 가이드" />
+                                <SidebarTab active={activeTab === 'STRATEGY'} onClick={() => setActiveTab('STRATEGY')} icon={<ListTodo className="w-4 h-4"/>} label="실행 전략" disabled={isReadOnly} />
+                                <SidebarTab active={activeTab === 'DOD'} onClick={() => setActiveTab('DOD')} icon={<CheckCircle2 className="w-4 h-4"/>} label="완료 조건 (DoD)" disabled={isReadOnly} />
+                                <SidebarTab active={activeTab === 'SOLUTION'} onClick={() => setActiveTab('SOLUTION')} icon={<Code2 className="w-4 h-4"/>} label="솔루션 초안" disabled={isReadOnly} />
+                                <SidebarTab active={activeTab === 'RESOURCES'} onClick={() => setActiveTab('RESOURCES')} icon={<BookOpen className="w-4 h-4"/>} label="학습 자료" disabled={isReadOnly} />
+                                <SidebarTab active={activeTab === 'CHAT'} onClick={() => setActiveTab('CHAT')} icon={<MessageSquare className="w-4 h-4"/>} label="AI 가이드" disabled={isReadOnly} />
                             </div>
                         </div>
 
@@ -590,7 +639,6 @@ export const AIModal: React.FC<AIModalProps> = ({ task, isOpen, onClose, onUpdat
                     </div>
                 </>
             )}
-
         </div>
     </div>
   );

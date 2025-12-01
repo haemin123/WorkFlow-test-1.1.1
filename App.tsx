@@ -1,17 +1,29 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Layout } from './components/Layout';
-import { KanbanBoard } from './components/Kanban';
-import { AIModal } from './components/AIModal';
-import { GeminiPage } from './components/GeminiPage';
-import { SettingsPage } from './components/SettingsPage';
-import { Insights } from './components/Insights';
 import { Task, TaskStatus, Priority, ViewMode } from './types';
 import { taskService } from './services/taskService'; 
-import { Plus, LogOut } from './components/Icons';
+import { Plus } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
 import { auth } from './firebaseConfig';
-import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { authService } from './services/authService';
+import { 
+  generateSubtasksAI, 
+  generateAcceptanceCriteriaAI, 
+  generateSolutionDraftAI, 
+  recommendResourcesAI 
+} from './services/geminiService';
+import { CommonHeader } from './components/CommonHeader';
+
+// Lazy load heavy components
+const KanbanBoard = lazy(() => import('./components/Kanban').then(module => ({ default: module.KanbanBoard })));
+const AIModal = lazy(() => import('./components/AIModal').then(module => ({ default: module.AIModal })));
+const GeminiPage = lazy(() => import('./components/GeminiPage').then(module => ({ default: module.GeminiPage })));
+const SettingsPage = lazy(() => import('./components/SettingsPage').then(module => ({ default: module.SettingsPage })));
+const Insights = lazy(() => import('./components/Insights').then(module => ({ default: module.Insights })));
+const ArchivePage = lazy(() => import('./components/ArchivePage').then(module => ({ default: module.ArchivePage })));
+const ProfilePage = lazy(() => import('./components/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const GoogleProfileModal = lazy(() => import('./components/GoogleProfileModal').then(module => ({ default: module.GoogleProfileModal })));
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('BOARD');
@@ -23,26 +35,51 @@ export default function App() {
   // Auth State
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  
+  // Profile Check State
+  const [isProfileComplete, setIsProfileComplete] = useState(false);
+  const [checkingProfile, setCheckingProfile] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      setAuthLoading(false);
+      if (currentUser) {
+          await checkUserProfile(currentUser.uid);
+      } else {
+          setIsProfileComplete(false);
+          setAuthLoading(false);
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      loadTasks(user.uid);
-    } else {
-      setTasks([]);
-    }
-  }, [user]);
+  const checkUserProfile = async (uid: string) => {
+      setCheckingProfile(true);
+      try {
+          const profile = await authService.getUserProfile(uid);
+          if (profile && profile.name) {
+              setIsProfileComplete(true);
+              loadTasks();
+          } else {
+              setIsProfileComplete(false); 
+          }
+      } catch (e) {
+          console.error("Profile check failed", e);
+          setIsProfileComplete(false);
+      } finally {
+          setCheckingProfile(false);
+          setAuthLoading(false);
+      }
+  }
 
-  const loadTasks = async (userId: string) => {
+  const handleProfileCompleted = () => {
+      setIsProfileComplete(true);
+      loadTasks();
+  };
+
+  const loadTasks = async () => {
     try {
-        const loadedTasks = await taskService.getAllTasks(userId);
+        const loadedTasks = await taskService.getAllTasks();
         setTasks(loadedTasks);
     } catch (error) {
         console.error("Failed to load tasks", error);
@@ -51,17 +88,18 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await authService.logout();
     } catch (error) {
       console.error("Logout failed", error);
     }
   };
 
-  const handleTaskClick = (task: Task) => {
+  const handleTaskClick = useCallback((task: Task) => {
+    // Removed blocking condition to allow viewing archived/trashed tasks
     setSelectedTask(task);
     setTempTask(null);
     setIsModalOpen(true);
-  };
+  }, []);
 
   const handleUpdateTask = async (updated: Task) => {
     if (tempTask) {
@@ -74,7 +112,7 @@ export default function App() {
        } catch (error) {
          console.error("Failed to update task", error);
          alert("수정사항 저장에 실패했습니다.");
-         if (user) loadTasks(user.uid); 
+         if (user) loadTasks(); 
        }
     }
   };
@@ -86,28 +124,142 @@ export default function App() {
     } catch (error) {
       console.error("Failed to update status", error);
       alert("상태 변경에 실패했습니다.");
-      if (user) loadTasks(user.uid);
-    }
-  };
-  
-  const handleDeleteTask = async (taskId: string) => {
-    const backup = [...tasks];
-    setTasks(prev => prev.filter(t => t.id !== taskId));
-    if (selectedTask?.id === taskId) {
-        setIsModalOpen(false);
-        setSelectedTask(null);
-    }
-    try {
-        await taskService.deleteTask(taskId);
-    } catch (error) {
-        console.error("Failed to delete task", error);
-        alert("삭제에 실패했습니다.");
-        setTasks(backup);
+      if (user) loadTasks();
     }
   };
 
-  const handleStartCreateTask = () => {
+  const handleArchiveTask = async (taskId: string) => {
+      if(!confirm('이 업무를 보관함으로 이동하시겠습니까?')) return;
+
+      const targetTask = tasks.find(t => t.id === taskId);
+      if(!targetTask) return;
+
+      const updatedTask: Task = { 
+          ...targetTask, 
+          archived: true,
+          originalStatus: targetTask.status, 
+          status: TaskStatus.ARCHIVED 
+      };
+
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      
+      try {
+          await taskService.updateTask(updatedTask);
+      } catch (e) {
+          console.error("Failed to archive task", e);
+          alert("보관함 이동 실패");
+          loadTasks();
+      }
+  };
+  
+  const handleArchiveAll = async (targetTasks: Task[]) => {
+      if(!confirm(`완료된 ${targetTasks.length}개의 업무를 모두 보관함으로 이동하시겠습니까?`)) return;
+
+      const updatedTasks: Task[] = targetTasks.map(t => ({ 
+          ...t, 
+          archived: true,
+          originalStatus: t.status,
+          status: TaskStatus.ARCHIVED
+      }));
+
+      setTasks(prev => prev.map(t => {
+          const found = updatedTasks.find(ut => ut.id === t.id);
+          return found || t;
+      }));
+
+      try {
+          await Promise.all(updatedTasks.map(t => taskService.updateTask(t)));
+      } catch (e) {
+           console.error("Failed to bulk archive", e);
+           alert("일괄 보관 실패");
+           loadTasks();
+      }
+  }
+
+  const handleRestoreTask = async (taskId: string) => {
+      if(!confirm('이 업무를 다시 보드로 복구하시겠습니까?')) return;
+      
+      const targetTask = tasks.find(t => t.id === taskId);
+      if(!targetTask) return;
+
+      const updatedTask: Task = { 
+          ...targetTask, 
+          archived: false, 
+          inTrash: false,
+          status: targetTask.originalStatus || TaskStatus.DONE 
+      };
+
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      
+      try {
+          await taskService.updateTask(updatedTask);
+      } catch (e) {
+          console.error("Failed to restore task", e);
+          alert("복구 실패");
+          loadTasks();
+      }
+  };
+  
+  const handleMoveToTrash = async (taskId: string) => {
+      const targetTask = tasks.find(t => t.id === taskId);
+      if(!targetTask) return;
+
+      const updatedTask: Task = { 
+          ...targetTask, 
+          inTrash: true,
+          originalStatus: targetTask.status, 
+          status: TaskStatus.TRASH 
+      };
+
+      setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+      if (selectedTask?.id === taskId) {
+          setIsModalOpen(false);
+          setSelectedTask(null);
+      }
+      try {
+          await taskService.updateTask(updatedTask);
+      } catch (error) {
+          console.error("Failed to move to trash", error);
+          alert("휴지통 이동 실패");
+          loadTasks();
+      }
+  };
+
+  const handlePermanentDelete = async (taskId: string) => {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+      try {
+          await taskService.deleteTask(taskId);
+      } catch (error) {
+          console.error("Failed to delete task", error);
+          alert("영구 삭제 실패");
+          loadTasks();
+      }
+  }
+  
+  const handleEmptyTrash = async () => {
+      if(!confirm("휴지통을 비우시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+      
+      const trashTasks = tasks.filter(t => t.inTrash);
+      setTasks(prev => prev.filter(t => !t.inTrash));
+      
+      try {
+          await Promise.all(trashTasks.map(t => taskService.deleteTask(t.id)));
+      } catch (e) {
+           console.error("Failed to empty trash", e);
+           alert("휴지통 비우기 실패");
+           loadTasks();
+      }
+  }
+
+  const handleStartCreateTask = async () => {
     if (!user) return;
+
+    // Use Auth profile which is updated by ProfilePage
+    let userProfile = { 
+        name: user.displayName || 'User', 
+        avatar: user.photoURL || undefined 
+    };
+    
     const newTaskTemplate: Task = {
         id: `t${Date.now()}`,
         title: '새로운 업무 요청',
@@ -117,13 +269,20 @@ export default function App() {
         priority: Priority.MEDIUM,
         status: TaskStatus.REQUESTED,
         dueDate: new Date().toISOString(),
-        assigneeId: user.uid, // Default to self
+        ownerUid: user.uid,
+        ownerEmail: user.email || undefined,
+        assigneeId: user.uid, 
+        assigneeName: userProfile.name,
+        assigneeAvatar: userProfile.avatar,
         requesterId: user.uid,
         subtasks: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        userId: user.uid // Set Owner
+        userId: user.uid,
+        archived: false,
+        inTrash: false
     };
+    
     setTempTask(newTaskTemplate);
     setSelectedTask(null);
     setIsModalOpen(true);
@@ -131,10 +290,85 @@ export default function App() {
 
   const handleFinalizeCreateTask = async (finalTask: Task) => {
     try {
-        const createdTask = await taskService.createTask(finalTask);
+        const taskWithLoading = { ...finalTask, aiStatus: 'GENERATING' as const };
+        const createdTask = await taskService.createTask(taskWithLoading);
         setTasks(prev => [...prev, createdTask]);
+        
         setIsModalOpen(false);
         setTempTask(null);
+        
+        // AI Background Analysis
+        (async () => {
+            try {
+                // Initialize analysis object
+                let currentAnalysis = { 
+                    lastUpdated: Date.now(),
+                    executionPlan: [] as any[],
+                    acceptanceCriteria: [] as any[],
+                    solutionDraft: '',
+                    learningResources: [] as any[]
+                };
+
+                // Helper to update state and DB incrementally
+                const updateProgress = async (partialAnalysis: Partial<typeof currentAnalysis>) => {
+                    currentAnalysis = { ...currentAnalysis, ...partialAnalysis };
+                    const updatedTask = { 
+                        ...createdTask, 
+                        aiAnalysis: currentAnalysis,
+                        // Keep status GENERATING until all done
+                    };
+                    
+                    // Update DB
+                    await taskService.updateTask(updatedTask);
+                    
+                    // Update Local State
+                    setTasks(prev => prev.map(t => t.id === createdTask.id ? updatedTask : t));
+                };
+
+                // 1. Strategy
+                try {
+                    const executionPlan = await generateSubtasksAI(createdTask);
+                    await updateProgress({ 
+                        executionPlan: executionPlan.map((s, i) => ({ id: `ep-${Date.now()}-${i}`, title: s.title, completed: false })) 
+                    });
+                } catch(e) { console.error("Strategy Gen Failed", e); }
+
+                // 2. DoD
+                try {
+                    const acceptanceCriteria = await generateAcceptanceCriteriaAI(createdTask);
+                    await updateProgress({ acceptanceCriteria });
+                } catch(e) { console.error("DoD Gen Failed", e); }
+
+                // 3. Solution
+                try {
+                    const solutionDraft = await generateSolutionDraftAI(createdTask);
+                    await updateProgress({ solutionDraft });
+                } catch(e) { console.error("Solution Gen Failed", e); }
+
+                // 4. Resources
+                try {
+                    const learningResources = await recommendResourcesAI(createdTask);
+                    await updateProgress({ learningResources });
+                } catch(e) { console.error("Resources Gen Failed", e); }
+
+                // Final Update: Set status COMPLETED
+                const finalTaskUpdate = { 
+                    ...createdTask, 
+                    aiAnalysis: currentAnalysis, 
+                    aiStatus: 'COMPLETED' as const
+                };
+                await taskService.updateTask(finalTaskUpdate);
+                setTasks(prev => prev.map(t => t.id === createdTask.id ? finalTaskUpdate : t));
+                
+            } catch (e) {
+                console.error("Background AI Analysis Failed", e);
+                // Mark as failed
+                const failedTask = { ...createdTask, aiStatus: 'FAILED' as const };
+                await taskService.updateTask(failedTask);
+                setTasks(prev => prev.map(t => t.id === createdTask.id ? failedTask : t));
+            }
+        })();
+
     } catch (error: any) {
         console.error("Failed to create task", error);
         alert(`저장 실패: ${error.message}`);
@@ -144,57 +378,115 @@ export default function App() {
   const renderContent = () => {
       switch (currentView) {
           case 'INSIGHT':
-              return <Insights tasks={tasks} />;
+              return (
+                  <div className="flex flex-col h-full">
+                      <CommonHeader 
+                        title="팀 인사이트" 
+                        subtitle="데이터 기반의 의사결정을 위한 분석 대시보드입니다." 
+                        user={user}
+                        onLogout={handleLogout}
+                        onNavigateProfile={() => setCurrentView('PROFILE')}
+                      />
+                      <Suspense fallback={<div className="p-8">Loading Insights...</div>}>
+                        <Insights tasks={tasks} />
+                      </Suspense>
+                  </div>
+              );
+          case 'ARCHIVE':
+              return (
+                  <Suspense fallback={<div className="p-8">Loading Archive...</div>}>
+                    <ArchivePage 
+                        tasks={tasks} 
+                        onRestoreTask={handleRestoreTask} 
+                        onDeleteTask={handlePermanentDelete}
+                        onEmptyTrash={handleEmptyTrash}
+                        onTaskClick={handleTaskClick}
+                        currentUser={user}
+                    />
+                  </Suspense>
+              );
+          case 'PROFILE':
+              return (
+                  <div className="flex flex-col h-full">
+                      <CommonHeader 
+                        title="프로필 관리" 
+                        subtitle="개인 정보 및 계정 설정을 관리하세요."
+                        user={user}
+                        onLogout={handleLogout}
+                        onNavigateProfile={() => setCurrentView('PROFILE')}
+                      />
+                      <Suspense fallback={<div className="p-8">Loading Profile...</div>}>
+                        <ProfilePage currentUser={user} />
+                      </Suspense>
+                  </div>
+              );
           case 'BOARD':
               return (
                 <>
-                    <header className="h-20 flex items-center justify-between px-8 z-10 shrink-0 backdrop-blur-sm bg-white/50 sticky top-0">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">프로젝트 보드</h1>
-                            <p className="text-sm text-gray-500 mt-1">팀의 업무 흐름을 AI와 함께 최적화하세요.</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                            <button onClick={handleStartCreateTask} className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-md hover:shadow-lg active:scale-95">
-                                <Plus className="w-4 h-4" />
-                                <span>새 요청 만들기</span>
-                            </button>
-                            
-                            <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                                {user?.photoURL ? (
-                                    <img src={user.photoURL} alt={user.displayName || 'User'} className="w-10 h-10 rounded-full border border-gray-200" />
-                                ) : (
-                                    <div className="w-10 h-10 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-600 font-bold text-sm">
-                                        {user?.email?.charAt(0).toUpperCase() || 'U'}
-                                    </div>
-                                )}
-                                <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 transition-colors p-2" title="로그아웃">
-                                    <LogOut className="w-5 h-5" />
-                                </button>
-                            </div>
-                        </div>
-                    </header>
+                    <CommonHeader 
+                        title="프로젝트 보드" 
+                        subtitle="팀의 업무 흐름을 AI와 함께 최적화하세요."
+                        user={user}
+                        onLogout={handleLogout}
+                        onNavigateProfile={() => setCurrentView('PROFILE')}
+                    >
+                        <button onClick={handleStartCreateTask} className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-md hover:shadow-lg active:scale-95">
+                            <Plus className="w-4 h-4" />
+                            <span>새 요청 만들기</span>
+                        </button>
+                    </CommonHeader>
 
                     <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 pt-4">
-                        <KanbanBoard 
-                            tasks={tasks} 
-                            onTaskClick={handleTaskClick}
-                            onStatusChange={handleStatusChange}
-                            onDeleteTask={handleDeleteTask}
-                        />
+                        <Suspense fallback={<div className="p-8">Loading Board...</div>}>
+                            <KanbanBoard 
+                                tasks={tasks} 
+                                onTaskClick={handleTaskClick}
+                                onStatusChange={handleStatusChange}
+                                onDeleteTask={handleMoveToTrash} 
+                                onArchiveTask={handleArchiveTask} 
+                                onArchiveAll={handleArchiveAll} 
+                                currentUser={user} 
+                            />
+                        </Suspense>
                     </div>
                 </>
               );
           case 'GEMINI':
-              return <GeminiPage />;
+              return (
+                  <div className="flex flex-col h-full">
+                      <CommonHeader 
+                        title="Gemini Pro" 
+                        subtitle="AI와 대화하며 업무 효율을 높이세요."
+                        user={user}
+                        onLogout={handleLogout}
+                        onNavigateProfile={() => setCurrentView('PROFILE')}
+                      />
+                      <Suspense fallback={<div className="p-8">Loading Gemini...</div>}>
+                        <GeminiPage />
+                      </Suspense>
+                  </div>
+              );
           case 'SETTINGS':
-              return <SettingsPage />;
+              return (
+                  <div className="flex flex-col h-full">
+                      <CommonHeader 
+                        title="환경 설정" 
+                        subtitle="앱의 기본 설정을 변경합니다."
+                        user={user}
+                        onLogout={handleLogout}
+                        onNavigateProfile={() => setCurrentView('PROFILE')}
+                      />
+                      <Suspense fallback={<div className="p-8">Loading Settings...</div>}>
+                        <SettingsPage />
+                      </Suspense>
+                  </div>
+              );
           default:
             return null;
       }
   }
 
-  if (authLoading) {
+  if (authLoading || checkingProfile) {
       return (
           <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
@@ -206,21 +498,32 @@ export default function App() {
       return <LoginPage />;
   }
 
+  if (!isProfileComplete) {
+      return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <GoogleProfileModal user={user} onClose={handleProfileCompleted} />
+        </Suspense>
+      );
+  }
+
   return (
     <Layout currentView={currentView} onNavigate={setCurrentView}>
       {renderContent()}
       
       {(selectedTask || tempTask) && (
-        <AIModal 
-          task={selectedTask || tempTask!}
-          isOpen={isModalOpen}
-          onClose={() => {
-              setIsModalOpen(false);
-              setTempTask(null);
-          }}
-          onUpdateTask={handleUpdateTask}
-          onCreateTask={tempTask ? handleFinalizeCreateTask : undefined}
-        />
+        <Suspense fallback={null}>
+            <AIModal 
+            task={selectedTask || tempTask!}
+            isOpen={isModalOpen}
+            onClose={() => {
+                setIsModalOpen(false);
+                setTempTask(null);
+            }}
+            onUpdateTask={handleUpdateTask}
+            onCreateTask={tempTask ? handleFinalizeCreateTask : undefined}
+            onDeleteTask={handleMoveToTrash}
+            />
+        </Suspense>
       )}
     </Layout>
   );

@@ -1,8 +1,37 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+    
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      // Users can read/write their own profile
+      allow read, write: if isOwner(userId);
+      // Optional: Allow authenticated users to read basic info of others (e.g. for assignee display)
+      allow read: if isSignedIn(); 
+    }
+
+    // --- Tasks Collection ---
+    match /tasks/{taskId} {
+      // 1. Create: Must be signed in and set ownerUid to self
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      
+      // 2. Read: Allow if owner OR assignee (or public logic if needed)
+      // For now, restrictive: only owner can see/edit
+      allow read, update, delete: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid || 
+        resource.data.assigneeId == request.auth.uid ||
+        resource.data.userId == request.auth.uid // Legacy support
+      );
     }
   }
 }

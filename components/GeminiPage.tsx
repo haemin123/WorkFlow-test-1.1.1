@@ -1,17 +1,17 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Mic, ImageIcon, Compass, Lightbulb, Code, ChevronDown, X, Calendar, Trash2 } from './Icons';
-import { getGeminiChatStream } from '../services/geminiService';
+import { chatWithGuide } from '../services/geminiService'; // Corrected import
 import { AVAILABLE_MODELS, GeminiModel } from '../constants';
+import { Task } from '../types'; // Import Task type
 
 interface Message {
     id: string;
     role: 'user' | 'model';
     text: string;
-    image?: string; // Base64 string for display
+    image?: string; 
     isStreaming?: boolean;
-    modelName?: string; // Added to track which model generated the response
-    timestamp: number; // Added for date display
+    modelName?: string; 
+    timestamp: number; 
 }
 
 const SUGGESTIONS = [
@@ -121,9 +121,6 @@ export const GeminiPage: React.FC = () => {
         if ((!text.trim() && !selectedImage) || isStreaming) return;
 
         const currentImage = selectedImage;
-        // Remove the base64 prefix for the API call
-        const base64Data = currentImage ? currentImage.split(',')[1] : undefined;
-
         const userMsg: Message = { 
             id: Date.now().toString(), 
             role: 'user', 
@@ -134,52 +131,56 @@ export const GeminiPage: React.FC = () => {
 
         setMessages(prev => [...prev, userMsg]);
         setInput('');
-        clearImage(); // Clear image preview after sending
+        clearImage();
         setIsStreaming(true);
 
-        // Convert standard message format to API history format
-        const history = messages.map(m => {
-            const parts: any[] = [];
-            if (m.text) parts.push({ text: m.text });
-            return { role: m.role, parts };
-        });
+        // Convert messages to ChatHistory format
+        // Note: chatWithGuide expects specific history format.
+        // We need to adapt the message structure.
+        const history = messages.map(m => ({
+            role: m.role,
+            parts: [{ text: m.text }]
+        }));
 
         try {
-            // Create placeholder for model response with current model name
             const modelMsgId = (Date.now() + 1).toString();
             setMessages(prev => [...prev, { 
                 id: modelMsgId, 
                 role: 'model', 
-                text: '', 
+                text: '생각 중...', // Initial placeholder
                 isStreaming: true,
-                modelName: selectedModel.name, // Capture the model name used for this request
+                modelName: selectedModel.name,
                 timestamp: Date.now()
             }]);
 
-            // Pass the selected model ID and optional image
-            const stream = await getGeminiChatStream(
+            // Create a dummy task context since chatWithGuide requires it
+            const dummyContext: Task = {
+                id: 'general-chat',
+                title: '일반 대화',
+                description: '사용자와의 자유로운 대화',
+                status: 'REQUESTED',
+                priority: 'MEDIUM',
+                product: '일반',
+                type: '일반',
+                dueDate: '',
+                assigneeId: '',
+                requesterId: '',
+                subtasks: [],
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            } as any;
+
+            // Call the non-streaming API
+            const responseText = await chatWithGuide(
                 history, 
                 text, 
-                selectedModel.id,
-                base64Data,
-                imageMimeType
+                dummyContext 
             );
             
-            let fullText = '';
-            for await (const chunk of stream) {
-                const chunkText = chunk.text || '';
-                fullText += chunkText;
-                
-                setMessages(prev => prev.map(m => 
-                    m.id === modelMsgId 
-                    ? { ...m, text: fullText } 
-                    : m
-                ));
-            }
-            
+            // Update with full response
             setMessages(prev => prev.map(m => 
                 m.id === modelMsgId 
-                ? { ...m, isStreaming: false } 
+                ? { ...m, text: responseText, isStreaming: false } 
                 : m
             ));
 
@@ -213,7 +214,6 @@ export const GeminiPage: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-white text-gray-900 font-sans relative overflow-hidden">
             
-            {/* --- Hidden File Input --- */}
             <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -222,7 +222,6 @@ export const GeminiPage: React.FC = () => {
                 className="hidden" 
             />
 
-            {/* --- Header / Model Selector --- */}
             <div className="absolute top-0 left-0 right-0 h-16 flex items-center justify-between px-4 md:px-6 z-20 bg-white/80 backdrop-blur-sm">
                 <div className="flex items-center gap-2 relative" ref={modelMenuRef}>
                     <button 
@@ -233,7 +232,6 @@ export const GeminiPage: React.FC = () => {
                         <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isModelMenuOpen ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {/* Dropdown Menu */}
                     {isModelMenuOpen && (
                         <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden animate-fade-in">
                             <div className="p-1.5">
@@ -273,10 +271,8 @@ export const GeminiPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* --- Chat Area --- */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pt-20 pb-32 relative">
                 {messages.length === 0 ? (
-                    /* Empty State / Hero */
                     <div className="flex flex-col items-center justify-center h-full min-h-[500px] animate-fade-in">
                         <div className="text-left w-full max-w-4xl px-4 mb-12">
                             <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-2">
@@ -308,7 +304,6 @@ export const GeminiPage: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    /* Message List */
                     <div className="w-full max-w-3xl mx-auto space-y-8">
                         {messages.map((m) => (
                             <div key={m.id} className={`group/message flex gap-4 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
@@ -322,7 +317,6 @@ export const GeminiPage: React.FC = () => {
                                 </div>
                                 
                                 <div className={`flex flex-col max-w-[80%] ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                    {/* Display Uploaded Image in Chat History */}
                                     {m.image && (
                                         <div className="mb-2 overflow-hidden rounded-lg border border-gray-200 shadow-sm max-w-[200px]">
                                             <img src={m.image} alt="Uploaded content" className="w-full h-auto" />
@@ -333,10 +327,7 @@ export const GeminiPage: React.FC = () => {
                                         {m.isStreaming && <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse align-middle"></span>}
                                     </div>
                                     
-                                    {/* Metadata Row: Date Badge + Delete + Model */}
                                     <div className={`mt-2 flex items-center gap-2 ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        
-                                        {/* Date Badge */}
                                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 text-red-500 border border-red-100 select-none shadow-sm">
                                             <Calendar className="w-3 h-3" />
                                             <span className="text-[11px] font-bold tracking-wide">
@@ -344,7 +335,6 @@ export const GeminiPage: React.FC = () => {
                                             </span>
                                         </div>
 
-                                        {/* Delete Button - Enhanced Visibility */}
                                         <button 
                                             onClick={() => handleDelete(m.id)}
                                             className="group/delete flex items-center justify-center w-7 h-7 rounded-full bg-white border border-gray-200 shadow-sm hover:bg-red-50 hover:border-red-200 transition-all"
@@ -353,7 +343,6 @@ export const GeminiPage: React.FC = () => {
                                             <Trash2 className="w-3.5 h-3.5 text-gray-400 group-hover/delete:text-red-500 transition-colors" />
                                         </button>
 
-                                        {/* Model Badge (Only for model responses) */}
                                         {m.role === 'model' && m.modelName && (
                                             <span className={`ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 shadow-sm select-none
                                                 ${m.modelName.includes('Pro') 
@@ -372,11 +361,8 @@ export const GeminiPage: React.FC = () => {
                 )}
             </div>
 
-            {/* --- Input Area (Sticky Bottom) --- */}
             <div className="absolute bottom-0 left-0 right-0 bg-white p-6 pb-8">
                 <div className="w-full max-w-3xl mx-auto relative group flex flex-col gap-2">
-                    
-                    {/* Image Preview Area (Above Input) */}
                     {selectedImage && (
                         <div className="bg-[#F0F4F9] rounded-2xl p-3 w-fit relative animate-fade-in shadow-sm border border-gray-200">
                              <div className="relative h-24 w-auto rounded-lg overflow-hidden">
@@ -391,9 +377,7 @@ export const GeminiPage: React.FC = () => {
                         </div>
                     )}
 
-                    {/* Input Bar */}
                     <div className={`flex items-center gap-2 bg-[#F0F4F9] rounded-full px-4 py-3 transition-all focus-within:shadow-md focus-within:bg-white focus-within:ring-1 focus-within:ring-gray-200 ${isStreaming ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                        
                         <button 
                             onClick={() => fileInputRef.current?.click()}
                             className="p-2 rounded-full hover:bg-gray-200 text-gray-600 transition-colors relative"

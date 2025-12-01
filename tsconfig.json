@@ -35,5 +35,5 @@
       "utils/**/*.ts",
       "types.ts",
       "vite-env.d.ts"
-  ]
+, "services/geminiService.ts.backup"  ]
 }

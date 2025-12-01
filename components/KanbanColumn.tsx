@@ -1,6 +1,7 @@
 import React from 'react';
 import { Task, TaskStatus } from '../types';
 import { TaskCard } from './TaskCard';
+import { Archive } from './Icons';
 
 interface KanbanColumnProps {
   id: TaskStatus;
@@ -16,6 +17,8 @@ interface KanbanColumnProps {
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent, status: TaskStatus) => void;
   onDeleteTask: (taskId: string) => void;
+  onArchiveTask?: (taskId: string) => void; // Added for archive functionality
+  onArchiveAll?: (tasks: Task[]) => void; // Added for bulk archive
 }
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -32,6 +35,8 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onDragLeave,
   onDrop,
   onDeleteTask,
+  onArchiveTask,
+  onArchiveAll,
 }) => {
   const isDragOver = dragOverColumn === id;
 
@@ -49,13 +54,25 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
           <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
           <h3 className="font-bold text-gray-700 text-sm">{label}</h3>
         </div>
-        <span
-          className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors
-            ${isDragOver ? 'bg-blue-200 text-blue-700' : 'bg-gray-100 text-gray-500'}
-        `}
-        >
-          {tasks.length}
-        </span>
+        <div className="flex items-center gap-2">
+            {onArchiveAll && tasks.length > 0 && id === TaskStatus.DONE && (
+                <button 
+                    onClick={() => onArchiveAll(tasks)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors"
+                    title="이 컬럼의 모든 업무 보관"
+                >
+                    <Archive className="w-3 h-3" />
+                    <span>모두 보관</span>
+                </button>
+            )}
+            <span
+              className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors
+                ${isDragOver ? 'bg-blue-200 text-blue-700' : 'bg-gray-100 text-gray-500'}
+            `}
+            >
+              {tasks.length}
+            </span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1 space-y-4 pb-20 custom-scrollbar">
@@ -74,6 +91,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}
               onDelete={onDeleteTask}
+              onArchive={onArchiveTask && id === TaskStatus.DONE ? onArchiveTask : undefined} // Only pass onArchive for DONE column
             />
           ))
         )}

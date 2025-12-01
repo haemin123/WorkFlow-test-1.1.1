@@ -10,6 +10,9 @@ interface KanbanProps {
   onTaskClick: (task: Task) => void;
   onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
   onDeleteTask: (taskId: string) => void;
+  onArchiveTask?: (taskId: string) => void; // Optional Archive Handler
+  onArchiveAll?: (tasks: Task[]) => void; // Bulk Archive
+  currentUser?: any; 
 }
 
 export const KanbanBoard: React.FC<KanbanProps> = ({
@@ -17,6 +20,9 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
   onTaskClick,
   onStatusChange,
   onDeleteTask,
+  onArchiveTask,
+  onArchiveAll,
+  currentUser
 }) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
@@ -29,17 +35,21 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
 
   // --- Smart Logic using Utility ---
   const processedTasks = useMemo(() => {
+    // 1. First, filter out archived tasks and trashed tasks for the main board
+    const activeTasks = tasks.filter(t => !t.archived && !t.inTrash);
+
+    // 2. Then apply sorting and filtering
     return getSortedAndFilteredTasks(
-      tasks,
+      activeTasks,
       {
         query: searchQuery,
         priority: filterPriority,
         onlyMyTasks,
-        currentUserId: 'u1', // Assuming 'u1' is logged in
+        currentUserId: currentUser?.uid || 'u1', 
       },
       sortBy
     );
-  }, [tasks, searchQuery, filterPriority, onlyMyTasks, sortBy]);
+  }, [tasks, searchQuery, filterPriority, onlyMyTasks, sortBy, currentUser]);
 
   // Drag Handlers
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
@@ -116,6 +126,8 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onDeleteTask={onDeleteTask}
+              onArchiveTask={onArchiveTask} // Pass archive handler
+              onArchiveAll={onArchiveAll} // Pass bulk archive handler
             />
           );
         })}

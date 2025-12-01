@@ -266,9 +266,10 @@ interface ChatViewProps {
     inputMsg: string;
     setInputMsg: (val: string) => void;
     onSend: () => void;
+    disabled?: boolean; // Added disabled prop
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({ messages, inputMsg, setInputMsg, onSend }) => (
+export const ChatView: React.FC<ChatViewProps> = ({ messages, inputMsg, setInputMsg, onSend, disabled }) => (
     <div className="h-full flex flex-col bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.length === 0 && (
@@ -292,13 +293,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ messages, inputMsg, setInput
         <div className="p-4 bg-white border-t border-gray-200">
             <div className="flex gap-2">
                 <input 
-                    className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none"
-                    placeholder="AI 가이드에게 질문하기..."
+                    className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    placeholder={disabled ? "읽기 전용 모드입니다." : "AI 가이드에게 질문하기..."}
                     value={inputMsg}
                     onChange={e => setInputMsg(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && onSend()}
+                    onKeyDown={e => e.key === 'Enter' && !disabled && onSend()}
+                    disabled={disabled}
                 />
-                <button onClick={onSend} className="p-3 bg-gray-900 text-white rounded-xl hover:bg-black transition-colors">
+                <button 
+                    onClick={onSend} 
+                    disabled={disabled}
+                    className="p-3 bg-gray-900 text-white rounded-xl hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                     <Send className="w-4 h-4" />
                 </button>
             </div>

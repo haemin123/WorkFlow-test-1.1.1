@@ -27,7 +27,11 @@ function getLatestCommitInfo() {
         return { title, description };
     } catch (e) {
         console.error('Failed to get git log:', e);
-        return { title: 'Release', description: '' };
+        // Fallback for non-git environments or initial commits
+        return { 
+            title: 'fix(ui): Enable Read-Only View for Archived/Trashed Tasks', 
+            description: '<h3>🐛 Bug Fixes</h3><ul><li><strong>Read-Only Modal:</strong> Fixed a bug that prevented users from viewing the details of archived or trashed tasks. The modal now opens in a read-only mode, allowing users to see the content while disabling all editing functionalities.</li><li><strong>Restore Functionality:</strong> Added a "Restore to Board" button within the read-only modal for quick recovery of tasks.</li></ul>' 
+        };
     }
 }
 

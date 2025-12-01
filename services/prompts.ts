@@ -95,13 +95,20 @@ export const AI_FEATURES: AIFeature[] = [
     model: 'gemini-pro',
     tags: ['QA', 'Validation'],
     promptGenerator: (task: Task) => `
-      다음 업무가 QA를 통과하고 배포되기 위한 '완료 조건(Acceptance Criteria)'을 불렛 포인트 리스트로 작성해주세요.
+      다음 업무의 완료 조건(Definition of Done)을 생성해주세요.
       
+      [강력한 제약 사항]
+      1. **반드시 정확히 7개의 항목**으로 구성된 JSON 배열을 반환해야 합니다.
+      2. 7개 미만도, 7개 초과도 허용되지 않습니다. 무조건 7개를 맞추세요.
+      3. 각 항목은 "개발, 테스트, 문서화, 배포, 보안, 성능, 승인" 관점을 골고루 포함해야 합니다.
+      4. 한국어로 작성해주세요.
+
       [업무 정보]
       제목: ${task.title}
       설명: ${task.description}
       
-      응답은 한국어 문자열 배열(JSON Array of strings)이어야 합니다.
+      [출력 예시]
+      ["기능 요구사항 충족 확인", "단위 테스트 통과", "코드 리뷰 승인", "API 문서 업데이트", "배포 환경 검증", "보안 스캔 통과", "PO 승인 완료"]
     `
   },
   {

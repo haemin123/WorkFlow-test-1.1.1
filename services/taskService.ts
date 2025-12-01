@@ -24,17 +24,29 @@ export const taskService = {
     try {
       let q;
       if (userId) {
+          // Removed orderBy to prevent 'Index Required' error for compound query.
+          // We will sort client-side.
           q = query(
             collection(db, COLLECTION_NAME), 
-            where('userId', '==', userId),
-            orderBy('createdAt', 'desc')
+            where('userId', '==', userId)
           );
       } else {
           q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
       }
       
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => doc.data() as Task);
+      const tasks = querySnapshot.docs.map(doc => doc.data() as Task);
+
+      // Sort client-side if we couldn't use orderBy in query
+      if (userId) {
+          tasks.sort((a, b) => {
+              const dateA = a.createdAt || 0;
+              const dateB = b.createdAt || 0;
+              return dateB - dateA;
+          });
+      }
+      
+      return tasks;
     } catch (error) {
       console.error("Error fetching tasks:", error);
       return [];

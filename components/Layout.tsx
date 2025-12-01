@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ViewMode } from '../types';
-import { LayoutDashboard, Search, Sparkles, ListTodo, Bot, BarChart3, Settings } from './Icons';
+import { LayoutDashboard, Sparkles, Bot, BarChart3, Settings, Archive } from './Icons';
 
 interface LayoutProps { 
     children: React.ReactNode; 
@@ -26,7 +26,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
       {/* Sidebar */}
       <aside className="w-20 lg:w-64 border-r border-gray-200 flex flex-col bg-gray-50/80 backdrop-blur-md fixed h-full z-20">
         <div className="h-20 flex items-center justify-center lg:justify-start lg:px-8">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('INSIGHT')}>
               <img src="/logo.png" alt="Baro.ai Logo" className="w-auto h-8 object-contain" />
           </div>
         </div>
@@ -50,13 +50,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
               active={currentView === 'GEMINI'} 
               onClick={() => onNavigate('GEMINI')}
           />
-          <div className="pt-4 pb-2">
-               <div className="h-px bg-gray-200 mx-2"></div>
-          </div>
-          <NavButton icon={<ListTodo />} label="내 업무" />
-          <NavButton icon={<Search />} label="검색" />
           
           <div className="pt-2"></div>
+          <NavButton 
+              icon={<Archive />} 
+              label="보관함" 
+              active={currentView === 'ARCHIVE'} 
+              onClick={() => onNavigate('ARCHIVE')}
+          />
           <NavButton 
               icon={<Settings />} 
               label="설정" 

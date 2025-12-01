@@ -1,0 +1,158 @@
+
+import React, { useMemo, useState } from 'react';
+import { Task, TaskStatus, Priority } from '../types';
+import { TaskCard } from './TaskCard';
+import { Archive, RotateCcw, Trash2, Search, Filter, LogOut } from './Icons';
+import { getSortedAndFilteredTasks } from '../utils/taskHelpers';
+
+interface ArchivePageProps {
+  tasks: Task[];
+  onRestoreTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  onEmptyTrash: () => void; 
+  onTaskClick: (task: Task) => void; 
+  currentUser: any;
+}
+
+type ArchiveFilter = 'ARCHIVED' | 'TRASH';
+
+export const ArchivePage: React.FC<ArchivePageProps> = ({
+  tasks,
+  onRestoreTask,
+  onDeleteTask,
+  onEmptyTrash,
+  onTaskClick,
+  currentUser,
+}) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentFilter, setCurrentFilter] = useState<ArchiveFilter>('ARCHIVED');
+
+  const filteredTasks = useMemo(() => {
+    let targetTasks = [];
+    if (currentFilter === 'ARCHIVED') {
+        targetTasks = tasks.filter(t => t.archived && !t.inTrash);
+    } else {
+        targetTasks = tasks.filter(t => t.inTrash);
+    }
+
+    return getSortedAndFilteredTasks(
+        targetTasks,
+        {
+            query: searchQuery,
+            priority: 'ALL',
+            onlyMyTasks: false,
+            currentUserId: currentUser?.uid
+        },
+        'NEWEST'
+    );
+  }, [tasks, searchQuery, currentFilter, currentUser]);
+
+  return (
+    <div className="flex flex-col h-full bg-gray-50/50">
+      {/* Archive Header - Now simplified as App.tsx handles main header */}
+      <div className="h-16 flex items-center justify-between px-8 border-b border-gray-100 bg-white sticky top-0 z-10 shrink-0">
+        <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${currentFilter === 'ARCHIVED' ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'}`}>
+                {currentFilter === 'ARCHIVED' ? <Archive className="w-5 h-5" /> : <Trash2 className="w-5 h-5" />}
+            </div>
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button 
+                    onClick={() => setCurrentFilter('ARCHIVED')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${currentFilter === 'ARCHIVED' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                    보관함 ({tasks.filter(t => t.archived && !t.inTrash).length})
+                </button>
+                <button 
+                    onClick={() => setCurrentFilter('TRASH')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${currentFilter === 'TRASH' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                    휴지통 ({tasks.filter(t => t.inTrash).length})
+                </button>
+             </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+             {/* Search Bar */}
+            <div className="relative group w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+                </div>
+                <input
+                    type="text"
+                    placeholder="검색..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl leading-5 bg-gray-50 placeholder-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 sm:text-sm transition-all"
+                />
+            </div>
+            
+            {/* Empty Trash Button */}
+            {currentFilter === 'TRASH' && filteredTasks.length > 0 && (
+                <button 
+                    onClick={onEmptyTrash}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors"
+                >
+                    <Trash2 className="w-4 h-4" />
+                    <span>휴지통 비우기</span>
+                </button>
+            )}
+        </div>
+      </div>
+
+      {/* Content Grid */}
+      <div className="flex-1 overflow-y-auto p-8">
+        {filteredTasks.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                {currentFilter === 'ARCHIVED' ? <Archive className="w-16 h-16 mb-4 opacity-20" /> : <Trash2 className="w-16 h-16 mb-4 opacity-20" />}
+                <p className="text-sm font-medium">
+                    {currentFilter === 'ARCHIVED' ? '보관된 업무가 없습니다.' : '휴지통이 비어있습니다.'}
+                </p>
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredTasks.map((task, index) => (
+                    <div key={task.id} className="relative group cursor-pointer" onClick={() => onTaskClick(task)}>
+                         {/* Overlay Actions */}
+                         <div className="absolute top-2 right-2 z-20 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                            <button 
+                                onClick={() => onRestoreTask(task.id)}
+                                className="p-2 bg-white border border-gray-200 rounded-full shadow-sm text-blue-600 hover:bg-blue-50 hover:border-blue-200 transition-all"
+                                title="다시 복구"
+                            >
+                                <RotateCcw className="w-4 h-4" />
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    if(confirm('정말로 영구 삭제하시겠습니까? 복구할 수 없습니다.')) onDeleteTask(task.id);
+                                }}
+                                className="p-2 bg-white border border-gray-200 rounded-full shadow-sm text-red-400 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all"
+                                title="영구 삭제"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                         </div>
+
+                         {/* Task Card */}
+                         <div className="opacity-80 hover:opacity-100 transition-opacity pointer-events-none">
+                             <TaskCard 
+                                task={task} 
+                                index={index} 
+                                draggedTaskId={null} 
+                                onClick={() => {}} 
+                                onDragStart={() => {}} 
+                                onDragEnd={() => {}} 
+                                onDelete={() => {}} 
+                             />
+                         </div>
+                         {/* Blur Overlay */}
+                         <div className={`absolute inset-0 rounded-2xl border border-dashed transition-colors
+                            ${currentFilter === 'TRASH' ? 'bg-red-50/10 border-red-200 hover:bg-red-50/20' : 'bg-gray-50/10 border-gray-300 hover:bg-gray-50/20'}`}>
+                         </div>
+                    </div>
+                ))}
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};

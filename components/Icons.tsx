@@ -56,7 +56,8 @@ import {
   CheckSquare,
   FileCode,
   Square,
-  LogOut // Added
+  LogOut,
+  Archive // Added
 } from 'lucide-react';
 
 export { 
@@ -116,5 +117,6 @@ export {
   CheckSquare,
   FileCode,
   Square,
-  LogOut // Added
+  LogOut,
+  Archive // Added
 };

@@ -6,7 +6,9 @@ export enum TaskStatus {
   // SENT Removed as per user request to merge into CHECKED
   FEEDBACK = 'FEEDBACK',
   DONE = 'DONE',
-  CANCELLED = 'CANCELLED'
+  CANCELLED = 'CANCELLED',
+  ARCHIVED = 'ARCHIVED',
+  TRASH = 'TRASH'
 }
 
 export enum Priority {
@@ -15,14 +17,25 @@ export enum Priority {
   LOW = 'LOW'
 }
 
-export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS';
+export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS' | 'ARCHIVE' | 'PROFILE';
 
+// Extended User Interface for Firestore Profile
 export interface User {
-  id: string;
+  id: string; // auth.uid
+  email: string;
   name: string;
-  role: 'REQUESTER' | 'ASSIGNEE';
-  avatar?: string;
-  email?: string; 
+  role: 'REQUESTER' | 'ASSIGNEE' | 'ADMIN'; // Added ADMIN
+  avatar?: string; // Legacy field (might use profileImageUrl)
+  profileImageUrl?: string; // New field for custom profile image
+  
+  // Profile Fields
+  department?: string; // 본부
+  team?: string;       // 팀
+  position?: string;   // 직급
+  jobTitle?: string;   // 직책
+  
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface Subtask {
@@ -44,15 +57,11 @@ export interface AcceptanceCriterion {
 }
 
 export interface AIAnalysis {
-  // Legacy field - might migrate later
   strategy?: string;
-  
-  // New Intelligent Modal Fields
   executionPlan?: Subtask[];
   learningResources?: Resource[];
   acceptanceCriteria?: AcceptanceCriterion[];
   solutionDraft?: string;
-  
   lastUpdated: number;
 }
 
@@ -65,14 +74,31 @@ export interface Task {
   priority: Priority;
   status: TaskStatus;
   dueDate: string; // ISO string
+  
+  // Owner Info (Explicit)
+  ownerUid: string;       // auth.currentUser.uid
+  ownerEmail?: string;    
+  
+  // Assignee Info
   assigneeId: string;
+  assigneeName?: string; 
+  assigneeAvatar?: string; 
+  
   requesterId: string;
   subtasks: Subtask[];
   aiAnalysis?: AIAnalysis;
-  createdAt?: number; // Added for DB sorting
-  updatedAt?: number; // Added for DB syncing
-  styleTag?: string; // Added for AI Draft UI context
-  userId?: string; // Owner User ID (Firebase Auth UID)
+  aiStatus?: 'GENERATING' | 'COMPLETED' | 'FAILED'; // New field for AI loading state
+  
+  createdAt?: number; 
+  updatedAt?: number; 
+  styleTag?: string; 
+  
+  // Legacy field support (userId was used as owner previously)
+  userId?: string; 
+
+  archived?: boolean; 
+  inTrash?: boolean; 
+  originalStatus?: TaskStatus;
 }
 
 export interface ChatMessage {

@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   projectId: "my-vertex-demo-477402",
@@ -17,6 +18,9 @@ export const app = initializeApp(firebaseConfig);
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Initialize Firebase Storage
+export const storage = getStorage(app);
 
 // Use specific database ID "workflow111" in my-vertex-demo project
 export const db = getFirestore(app, "workflow111");

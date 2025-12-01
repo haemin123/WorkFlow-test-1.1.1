@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task, TaskStatus, Priority } from '../types';
 import { MOCK_USERS } from '../constants';
-import { getWeeklyInsight } from '../services/geminiService';
+import { generateInsights } from '../services/geminiService'; // Corrected import and function name
 import { 
   TrendingUp, 
   AlertTriangle, 
@@ -70,10 +70,9 @@ export const Insights: React.FC<InsightsProps> = ({ tasks }) => {
 
   // --- 2. Charts Data ---
   
-  // Assignee Workload
+  // Assignee Workload (Updated to use task.assigneeName)
   const assigneeCounts = tasks.reduce((acc, task) => {
-    const assignee = MOCK_USERS.find(u => u.id === task.assigneeId);
-    const name = assignee ? assignee.name : '미지정';
+    const name = task.assigneeName && task.assigneeName.trim() !== '' ? task.assigneeName : '미지정';
     acc[name] = (acc[name] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -94,7 +93,7 @@ export const Insights: React.FC<InsightsProps> = ({ tasks }) => {
           busiestMember: busiestMember
         };
         
-        const text = await getWeeklyInsight(tasks, stats);
+        const text = await generateInsights(tasks, stats);
         setInsight(text);
       } catch (error) {
         setInsight("AI 분석 데이터를 불러오는 중 문제가 발생했습니다.");
@@ -240,12 +239,23 @@ export const Insights: React.FC<InsightsProps> = ({ tasks }) => {
               </div>
               
               <div className="flex-1 flex items-end justify-around gap-4 pb-2 min-h-[200px]">
-                  {Object.entries(assigneeCounts).map(([name, count]) => {
+                  {/* Dynamically render bars based on assigneeCounts */}
+                  {Object.entries(assigneeCounts)
+                    .sort(([, countA], [, countB]) => (countB as number) - (countA as number)) // Sort by count descending
+                    .map(([name, count]) => {
                       const heightPercent = ((count as number) / maxWorkload) * 100;
-                      const displayHeight = Math.max(heightPercent, 5); 
+                      const displayHeight = Math.max(heightPercent, 5); // Ensure a minimum visible height
+                      const totalTasks = tasks.length;
+                      const percentage = totalTasks > 0 ? Math.round(((count as number) / totalTasks) * 100) : 0;
                       
                       return (
-                          <div key={name} className="flex flex-col items-center gap-3 w-full group cursor-default">
+                          <div key={name} className="flex flex-col items-center gap-3 w-full group cursor-default relative">
+                              {/* Tooltip */}
+                              <div className="absolute bottom-full mb-2 p-2 px-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap pointer-events-none">
+                                  <p className="font-bold">{name}</p>
+                                  <p>{count as number}건 ({percentage}%)</p>
+                              </div>
+
                               <div className="relative w-full max-w-[40px] flex items-end justify-center h-[180px] bg-gray-50 rounded-t-lg overflow-hidden">
                                   <div 
                                       className="w-full bg-[#306364]/80 group-hover:bg-[#306364] transition-all duration-500 rounded-t-lg relative group-hover:shadow-lg"
