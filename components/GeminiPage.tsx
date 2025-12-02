@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, Mic, ImageIcon, Compass, Lightbulb, Code, ChevronDown, X, Calendar, Trash2 } from './Icons';
-import { chatWithGuide } from '../services/geminiService'; // Corrected import
+import { Sparkles, Send, Mic, ImageIcon, Compass, Lightbulb, Code, ChevronDown, X, Calendar, Trash2, MessageSquare, LayoutDashboard } from './Icons';
+import { startChatWithTaskContext, chatWithGuide } from '../services/geminiService';
 import { AVAILABLE_MODELS, GeminiModel } from '../constants';
-import { Task } from '../types'; // Import Task type
+import { Task } from '../types';
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface Message {
     id: string;
@@ -14,6 +15,13 @@ interface Message {
     timestamp: number; 
 }
 
+interface GeminiPageProps {
+    tasks?: Task[];
+    currentUser?: FirebaseUser | null;
+}
+
+type ChatMode = 'general' | 'project';
+
 const SUGGESTIONS = [
     { icon: <ImageIcon className="w-5 h-5 text-purple-500" />, text: "Create an image", sub: "of a futuristic workspace" },
     { icon: <Lightbulb className="w-5 h-5 text-yellow-500" />, text: "Brainstorm ideas", sub: "for a marketing campaign" },
@@ -21,8 +29,24 @@ const SUGGESTIONS = [
     { icon: <Compass className="w-5 h-5 text-green-500" />, text: "Plan a trip", sub: "to Seoul with team" },
 ];
 
-export const GeminiPage: React.FC = () => {
-    const [messages, setMessages] = useState<Message[]>([]);
+export const GeminiPage: React.FC<GeminiPageProps> = ({ tasks = [], currentUser }) => {
+    // Chat Mode State
+    const [chatMode, setChatMode] = useState<ChatMode>('general');
+
+    // Separate Message States for each mode
+    const [generalMessages, setGeneralMessages] = useState<Message[]>([]);
+    const [projectMessages, setProjectMessages] = useState<Message[]>([]);
+
+    // Get current messages based on mode
+    const messages = chatMode === 'general' ? generalMessages : projectMessages;
+    const setMessages = (newMessages: Message[] | ((prev: Message[]) => Message[])) => {
+        if (chatMode === 'general') {
+            setGeneralMessages(newMessages);
+        } else {
+            setProjectMessages(newMessages);
+        }
+    };
+
     const [input, setInput] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
     const [isListening, setIsListening] = useState(false);
@@ -43,7 +67,7 @@ export const GeminiPage: React.FC = () => {
     // Auto scroll to bottom
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages, selectedImage]);
+    }, [messages, selectedImage, chatMode]); 
 
     // Close model menu when clicking outside
     useEffect(() => {
@@ -58,7 +82,6 @@ export const GeminiPage: React.FC = () => {
 
     // --- Handlers ---
 
-    // 1. File Upload Handler
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
@@ -77,7 +100,6 @@ export const GeminiPage: React.FC = () => {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // 2. Speech Recognition Handler
     const handleMicClick = () => {
         if (!('webkitSpeechRecognition' in window)) {
             alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
@@ -116,7 +138,7 @@ export const GeminiPage: React.FC = () => {
         recognition.start();
     };
 
-    // 3. Send Message Handler
+    // Send Message Handler
     const handleSend = async (text: string = input) => {
         if ((!text.trim() && !selectedImage) || isStreaming) return;
 
@@ -134,9 +156,6 @@ export const GeminiPage: React.FC = () => {
         clearImage();
         setIsStreaming(true);
 
-        // Convert messages to ChatHistory format
-        // Note: chatWithGuide expects specific history format.
-        // We need to adapt the message structure.
         const history = messages.map(m => ({
             role: m.role,
             parts: [{ text: m.text }]
@@ -147,37 +166,23 @@ export const GeminiPage: React.FC = () => {
             setMessages(prev => [...prev, { 
                 id: modelMsgId, 
                 role: 'model', 
-                text: '생각 중...', // Initial placeholder
+                text: '생각 중...', 
                 isStreaming: true,
                 modelName: selectedModel.name,
                 timestamp: Date.now()
             }]);
 
-            // Create a dummy task context since chatWithGuide requires it
-            const dummyContext: Task = {
-                id: 'general-chat',
-                title: '일반 대화',
-                description: '사용자와의 자유로운 대화',
-                status: 'REQUESTED',
-                priority: 'MEDIUM',
-                product: '일반',
-                type: '일반',
-                dueDate: '',
-                assigneeId: '',
-                requesterId: '',
-                subtasks: [],
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-            } as any;
+            let responseText = '';
 
-            // Call the non-streaming API
-            const responseText = await chatWithGuide(
-                history, 
-                text, 
-                dummyContext 
-            );
+            if (chatMode === 'general') {
+                const dummyContext: Task = {
+                    id: 'general', title: 'General Chat', description: 'General conversation', status: 'REQUESTED', priority: 'MEDIUM', product: 'General', type: 'General', dueDate: '', assigneeId: '', requesterId: '', subtasks: [], createdAt: Date.now(), updatedAt: Date.now()
+                } as any;
+                responseText = await chatWithGuide(history, text, dummyContext);
+            } else {
+                responseText = await startChatWithTaskContext(history, text, tasks);
+            }
             
-            // Update with full response
             setMessages(prev => prev.map(m => 
                 m.id === modelMsgId 
                 ? { ...m, text: responseText, isStreaming: false } 
@@ -214,26 +219,23 @@ export const GeminiPage: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-white text-gray-900 font-sans relative overflow-hidden">
             
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileSelect} 
-                accept="image/*" 
-                className="hidden" 
-            />
+            <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
 
-            <div className="absolute top-0 left-0 right-0 h-16 flex items-center justify-between px-4 md:px-6 z-20 bg-white/80 backdrop-blur-sm">
-                <div className="flex items-center gap-2 relative" ref={modelMenuRef}>
+            {/* Header Area */}
+            <div className="absolute top-0 left-0 right-0 h-20 z-20 bg-white/90 backdrop-blur-md border-b border-gray-100 flex items-center justify-between px-6">
+                
+                {/* Left: Model Selector */}
+                <div className="flex items-center gap-2 relative w-48" ref={modelMenuRef}>
                     <button 
                         onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
-                        className="flex items-center gap-1 text-lg font-medium text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
+                        className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
                     >
                         <span>{selectedModel.name}</span>
                         <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isModelMenuOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     {isModelMenuOpen && (
-                        <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden animate-fade-in">
+                        <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden animate-fade-in z-50">
                             <div className="p-1.5">
                                 {AVAILABLE_MODELS.map((model) => (
                                     <button
@@ -264,44 +266,107 @@ export const GeminiPage: React.FC = () => {
                     )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                     <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 text-xs font-bold">
-                        U
+                {/* Center: Chat Mode Toggle (Larger & Centered) */}
+                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                    <div className="flex bg-gray-100 p-1.5 rounded-full shadow-inner">
+                        <button 
+                            onClick={() => setChatMode('general')}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300
+                                ${chatMode === 'general' 
+                                    ? 'bg-white text-blue-600 shadow-sm scale-105' 
+                                    : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <MessageSquare className="w-4 h-4" />
+                            일반 채팅
+                        </button>
+                        <button 
+                            onClick={() => setChatMode('project')}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300
+                                ${chatMode === 'project' 
+                                    ? 'bg-white text-blue-600 shadow-sm scale-105' 
+                                    : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <LayoutDashboard className="w-4 h-4" />
+                            프로젝트 채팅
+                        </button>
+                    </div>
+                </div>
+
+                {/* Right: User Profile */}
+                <div className="flex items-center gap-2 w-48 justify-end">
+                     <span className="text-sm font-medium text-gray-600 hidden sm:block truncate max-w-[100px]">
+                        {currentUser?.displayName || 'User'}
+                     </span>
+                     <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 text-sm font-bold border border-gray-200">
+                        {currentUser?.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
                      </div>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pt-20 pb-32 relative">
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pt-24 pb-32 relative">
                 {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full min-h-[500px] animate-fade-in">
-                        <div className="text-left w-full max-w-4xl px-4 mb-12">
-                            <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-2">
+                    <div className="flex flex-col items-center justify-center h-full min-h-[400px] animate-fade-in">
+                        <div className="text-center w-full max-w-4xl px-4 mb-12">
+                            <h1 className="text-5xl md:text-6xl font-medium tracking-tight mb-4">
                                 <span className="bg-gradient-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
-                                    Hello, User
+                                    Hello, {currentUser?.displayName ? currentUser.displayName.split(' ')[0] : 'User'}
                                 </span>
                             </h1>
-                            <h2 className="text-5xl md:text-6xl font-medium text-[#C4C7C5] tracking-tight">
-                                How can I help you today?
+                            <h2 className="text-3xl md:text-4xl font-medium text-[#C4C7C5] tracking-tight mb-4">
+                                {chatMode === 'general' ? "무엇이든 물어보세요" : "프로젝트에 대해 이야기해볼까요?"}
                             </h2>
+                            <p className="text-gray-400 text-lg">
+                                {chatMode === 'general' 
+                                    ? "자유로운 주제로 대화를 나눌 수 있습니다." 
+                                    : "현재 진행 중인 업무 상황을 바탕으로 AI가 조언해 드립니다."}
+                            </p>
                         </div>
 
-                        <div className="w-full max-w-4xl px-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                            {SUGGESTIONS.map((s, i) => (
-                                <button 
-                                    key={i}
-                                    onClick={() => handleSuggestionClick(s.text, s.sub)}
-                                    className="p-4 h-40 rounded-2xl bg-[#F0F4F9] hover:bg-[#DCE3E9] transition-colors text-left flex flex-col justify-between group relative overflow-hidden"
-                                >
-                                    <div>
-                                        <p className="text-gray-800 font-medium text-sm">{s.text}</p>
-                                        <p className="text-gray-500 text-sm mt-1">{s.sub}</p>
-                                    </div>
-                                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm self-end group-hover:scale-110 transition-transform">
-                                        {s.icon}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
+                        {chatMode === 'general' && (
+                            <div className="w-full max-w-4xl px-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                {SUGGESTIONS.map((s, i) => (
+                                    <button 
+                                        key={i}
+                                        onClick={() => handleSuggestionClick(s.text, s.sub)}
+                                        className="p-4 h-40 rounded-2xl bg-[#F0F4F9] hover:bg-[#DCE3E9] transition-colors text-left flex flex-col justify-between group relative overflow-hidden"
+                                    >
+                                        <div>
+                                            <p className="text-gray-800 font-medium text-sm">{s.text}</p>
+                                            <p className="text-gray-500 text-sm mt-1">{s.sub}</p>
+                                        </div>
+                                        <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm self-end group-hover:scale-110 transition-transform">
+                                            {s.icon}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        
+                        {chatMode === 'project' && (
+                             <div className="w-full max-w-2xl px-4">
+                                 <div className="p-8 bg-blue-50 rounded-3xl border border-blue-100 flex flex-col gap-4 text-center">
+                                     <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto shadow-sm text-blue-600">
+                                         <LayoutDashboard className="w-6 h-6" />
+                                     </div>
+                                     <h3 className="text-xl font-bold text-blue-900">
+                                         현재 프로젝트 현황
+                                     </h3>
+                                     <p className="text-blue-700/80">
+                                         총 <span className="font-bold">{tasks.length}</span>개의 업무가 등록되어 있습니다.<br/>
+                                         AI가 모든 업무의 진행 상황과 완료 조건을 알고 있습니다.
+                                     </p>
+                                     <div className="flex justify-center gap-3 mt-4">
+                                         <button onClick={() => handleSend("현재 가장 급한 업무가 뭐야?")} className="px-5 py-2.5 bg-white text-blue-600 text-sm font-bold rounded-xl hover:bg-blue-100 transition-colors shadow-sm border border-blue-100">
+                                             🔥 가장 급한 업무?
+                                         </button>
+                                         <button onClick={() => handleSend("이번 주 업무 리포트 써줘")} className="px-5 py-2.5 bg-white text-blue-600 text-sm font-bold rounded-xl hover:bg-blue-100 transition-colors shadow-sm border border-blue-100">
+                                             📊 주간 리포트 작성
+                                         </button>
+                                     </div>
+                                 </div>
+                             </div>
+                        )}
                     </div>
                 ) : (
                     <div className="w-full max-w-3xl mx-auto space-y-8">
@@ -312,7 +377,9 @@ export const GeminiPage: React.FC = () => {
                                     {m.role === 'model' ? (
                                         <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" className="w-full h-full" alt="Gemini" />
                                     ) : (
-                                        <span className="text-xs font-bold text-white">U</span>
+                                        <span className="text-xs font-bold text-white">
+                                            {currentUser?.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
+                                        </span>
                                     )}
                                 </div>
                                 
@@ -400,7 +467,7 @@ export const GeminiPage: React.FC = () => {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && !isStreaming && handleSend()}
-                            placeholder={isListening ? "듣고 있는 중..." : "Enter a prompt here"}
+                            placeholder={isListening ? "듣고 있는 중..." : (chatMode === 'general' ? "Enter a prompt here" : "Ask about your project...")}
                             className="flex-1 bg-transparent border-none focus:ring-0 text-gray-800 placeholder-gray-500 text-base"
                             disabled={isStreaming}
                         />

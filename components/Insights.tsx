@@ -109,13 +109,7 @@ export const Insights: React.FC<InsightsProps> = ({ tasks }) => {
     <div className="h-full overflow-y-auto custom-scrollbar p-8 bg-gray-50/50 font-sans">
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
         
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-              <h2 className="text-2xl font-bold text-gray-900 tracking-tight">프로젝트 인사이트</h2>
-              <p className="text-sm text-gray-500 mt-1">실시간 데이터 기반으로 팀의 업무 효율을 분석합니다.</p>
-          </div>
-        </div>
+        {/* Header Removed (Moved to CommonHeader in App.tsx) */}
 
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

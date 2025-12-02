@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Task, Priority } from '../types';
 import { AlertCircle, Calendar, Clock, Trash2, Archive, Loader2, Sparkles } from './Icons';
 import { formatDate } from '../utils/formatters';
@@ -24,6 +24,24 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onArchive,
   index,
 }) => {
+  const [showAiCompleted, setShowAiCompleted] = useState(false);
+
+  useEffect(() => {
+    // Only show the AI completed badge if it was updated recently (within 10 seconds)
+    // This prevents the badge from showing up again on page refresh
+    const isRecentlyUpdated = task.updatedAt && (Date.now() - task.updatedAt < 10000);
+
+    if (task.aiStatus === 'COMPLETED' && isRecentlyUpdated) {
+      setShowAiCompleted(true);
+      const timer = setTimeout(() => {
+        setShowAiCompleted(false);
+      }, 5000); // Hide after 5 seconds
+      return () => clearTimeout(timer);
+    } else {
+        setShowAiCompleted(false);
+    }
+  }, [task.aiStatus, task.updatedAt]);
+
   return (
     <div
       draggable
@@ -65,8 +83,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                    <span>AI</span>
                </div>
             )}
-            {task.aiStatus === 'COMPLETED' && (
-               <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-bold" title="AI 분석 완료">
+            {task.aiStatus === 'COMPLETED' && showAiCompleted && (
+               <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-bold animate-fade-in" title="AI 분석 완료">
                    <Sparkles className="w-3 h-3" />
                    <span>AI</span>
                </div>

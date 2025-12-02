@@ -11,6 +11,7 @@ import {
   MoreHorizontal, 
   Calendar,
   User,
+  ChevronLeft, // Added
   ChevronRight,
   MessageSquare,
   BrainCircuit,
@@ -57,7 +58,7 @@ import {
   FileCode,
   Square,
   LogOut,
-  Archive // Added
+  Archive
 } from 'lucide-react';
 
 export { 
@@ -72,6 +73,7 @@ export {
   MoreHorizontal, 
   Calendar,
   User,
+  ChevronLeft, // Added
   ChevronRight,
   MessageSquare,
   BrainCircuit,
@@ -118,5 +120,5 @@ export {
   FileCode,
   Square,
   LogOut,
-  Archive // Added
+  Archive
 };

@@ -4,6 +4,7 @@ import { Task, TaskStatus, Priority, ViewMode } from './types';
 import { taskService } from './services/taskService'; 
 import { Plus } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
+import { LandingPage } from './components/LandingPage'; // Import LandingPage
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { authService } from './services/authService';
@@ -26,7 +27,28 @@ const ProfilePage = lazy(() => import('./components/ProfilePage').then(module =>
 const GoogleProfileModal = lazy(() => import('./components/GoogleProfileModal').then(module => ({ default: module.GoogleProfileModal })));
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewMode>('BOARD');
+  const [showLanding, setShowLanding] = useState<boolean>(() => {
+    // URL에 view 파라미터가 있으면 랜딩 페이지를 건너뜀
+    if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        return !params.has('view');
+    }
+    return true;
+  }); 
+
+  // Initialize currentView from URL query parameter
+  const [currentView, setCurrentView] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view');
+      // Validate if the view parameter matches ViewMode types
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+        return view as ViewMode;
+      }
+    }
+    return 'BOARD';
+  });
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,12 +62,41 @@ export default function App() {
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(false);
 
+  // Function to update view and URL
+  const updateView = (newView: ViewMode) => {
+    setCurrentView(newView);
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', newView);
+    window.history.pushState({}, '', url);
+  };
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view');
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+        setCurrentView(view as ViewMode);
+        setShowLanding(false);
+      } else if (!view) {
+        setShowLanding(true);
+      } else {
+        setCurrentView('BOARD');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+          // setShowLanding(false); // Logged in -> REMOVED to respect URL state
           await checkUserProfile(currentUser.uid);
       } else {
+          // setShowLanding(true); // Not logged in -> REMOVED to respect URL state
           setIsProfileComplete(false);
           setAuthLoading(false);
       }
@@ -89,6 +140,10 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await authService.logout();
+      setShowLanding(true); // Show landing page on logout
+      const url = new URL(window.location.href);
+      url.searchParams.delete('view');
+      window.history.pushState({}, '', url);
     } catch (error) {
       console.error("Logout failed", error);
     }
@@ -375,123 +430,20 @@ export default function App() {
     }
   }
 
-  const renderContent = () => {
-      switch (currentView) {
-          case 'INSIGHT':
-              return (
-                  <div className="flex flex-col h-full">
-                      <CommonHeader 
-                        title="팀 인사이트" 
-                        subtitle="데이터 기반의 의사결정을 위한 분석 대시보드입니다." 
-                        user={user}
-                        onLogout={handleLogout}
-                        onNavigateProfile={() => setCurrentView('PROFILE')}
-                      />
-                      <Suspense fallback={<div className="p-8">Loading Insights...</div>}>
-                        <Insights tasks={tasks} />
-                      </Suspense>
-                  </div>
-              );
-          case 'ARCHIVE':
-              return (
-                  <Suspense fallback={<div className="p-8">Loading Archive...</div>}>
-                    <ArchivePage 
-                        tasks={tasks} 
-                        onRestoreTask={handleRestoreTask} 
-                        onDeleteTask={handlePermanentDelete}
-                        onEmptyTrash={handleEmptyTrash}
-                        onTaskClick={handleTaskClick}
-                        currentUser={user}
-                    />
-                  </Suspense>
-              );
-          case 'PROFILE':
-              return (
-                  <div className="flex flex-col h-full">
-                      <CommonHeader 
-                        title="프로필 관리" 
-                        subtitle="개인 정보 및 계정 설정을 관리하세요."
-                        user={user}
-                        onLogout={handleLogout}
-                        onNavigateProfile={() => setCurrentView('PROFILE')}
-                      />
-                      <Suspense fallback={<div className="p-8">Loading Profile...</div>}>
-                        <ProfilePage currentUser={user} />
-                      </Suspense>
-                  </div>
-              );
-          case 'BOARD':
-              return (
-                <>
-                    <CommonHeader 
-                        title="프로젝트 보드" 
-                        subtitle="팀의 업무 흐름을 AI와 함께 최적화하세요."
-                        user={user}
-                        onLogout={handleLogout}
-                        onNavigateProfile={() => setCurrentView('PROFILE')}
-                    >
-                        <button onClick={handleStartCreateTask} className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-md hover:shadow-lg active:scale-95">
-                            <Plus className="w-4 h-4" />
-                            <span>새 요청 만들기</span>
-                        </button>
-                    </CommonHeader>
-
-                    <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 pt-4">
-                        <Suspense fallback={<div className="p-8">Loading Board...</div>}>
-                            <KanbanBoard 
-                                tasks={tasks} 
-                                onTaskClick={handleTaskClick}
-                                onStatusChange={handleStatusChange}
-                                onDeleteTask={handleMoveToTrash} 
-                                onArchiveTask={handleArchiveTask} 
-                                onArchiveAll={handleArchiveAll} 
-                                currentUser={user} 
-                            />
-                        </Suspense>
-                    </div>
-                </>
-              );
-          case 'GEMINI':
-              return (
-                  <div className="flex flex-col h-full">
-                      <CommonHeader 
-                        title="Gemini Pro" 
-                        subtitle="AI와 대화하며 업무 효율을 높이세요."
-                        user={user}
-                        onLogout={handleLogout}
-                        onNavigateProfile={() => setCurrentView('PROFILE')}
-                      />
-                      <Suspense fallback={<div className="p-8">Loading Gemini...</div>}>
-                        <GeminiPage />
-                      </Suspense>
-                  </div>
-              );
-          case 'SETTINGS':
-              return (
-                  <div className="flex flex-col h-full">
-                      <CommonHeader 
-                        title="환경 설정" 
-                        subtitle="앱의 기본 설정을 변경합니다."
-                        user={user}
-                        onLogout={handleLogout}
-                        onNavigateProfile={() => setCurrentView('PROFILE')}
-                      />
-                      <Suspense fallback={<div className="p-8">Loading Settings...</div>}>
-                        <SettingsPage />
-                      </Suspense>
-                  </div>
-              );
-          default:
-            return null;
-      }
-  }
-
   if (authLoading || checkingProfile) {
       return (
           <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
           </div>
       );
+  }
+
+  // Show Landing Page regardless of login status if showLanding is true
+  if (showLanding) {
+      return <LandingPage onStart={() => {
+        setShowLanding(false);
+        updateView('BOARD');
+      }} />;
   }
 
   if (!user) {
@@ -507,8 +459,118 @@ export default function App() {
   }
 
   return (
-    <Layout currentView={currentView} onNavigate={setCurrentView}>
-      {renderContent()}
+    <Layout currentView={currentView} onNavigate={updateView}>
+      {/* ... renderContent switch case ... */}
+      {(() => {
+          switch (currentView) {
+              case 'INSIGHT':
+                  return (
+                      <div className="flex flex-col h-full">
+                          <CommonHeader 
+                            title="프로젝트 인사이트" 
+                            subtitle="실시간 데이터 기반으로 팀의 업무 효율을 분석합니다." 
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                          />
+                          <Suspense fallback={<div className="p-8">Loading Insights...</div>}>
+                            <Insights tasks={tasks} />
+                          </Suspense>
+                      </div>
+                  );
+              case 'ARCHIVE':
+                  return (
+                      <Suspense fallback={<div className="p-8">Loading Archive...</div>}>
+                        <ArchivePage 
+                            tasks={tasks} 
+                            onRestoreTask={handleRestoreTask} 
+                            onDeleteTask={handlePermanentDelete}
+                            onEmptyTrash={handleEmptyTrash}
+                            onTaskClick={handleTaskClick}
+                            currentUser={user}
+                        />
+                      </Suspense>
+                  );
+              case 'PROFILE':
+                  return (
+                      <div className="flex flex-col h-full">
+                          <CommonHeader 
+                            title="프로필 관리" 
+                            subtitle="개인 정보 및 계정 설정을 관리하세요."
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                          />
+                          <Suspense fallback={<div className="p-8">Loading Profile...</div>}>
+                            <ProfilePage currentUser={user} />
+                          </Suspense>
+                      </div>
+                  );
+              case 'BOARD':
+                  return (
+                    <>
+                        <CommonHeader 
+                            title="프로젝트 보드" 
+                            subtitle="팀의 업무 흐름을 AI와 함께 최적화하세요."
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                        >
+                            <button onClick={handleStartCreateTask} className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-6 py-2.5 rounded-full text-sm font-medium transition-all shadow-md hover:shadow-lg active:scale-95">
+                                <Plus className="w-4 h-4" />
+                                <span>새 요청 만들기</span>
+                            </button>
+                        </CommonHeader>
+
+                        <div className="flex-1 overflow-x-auto overflow-y-hidden p-8 pt-4">
+                            <Suspense fallback={<div className="p-8">Loading Board...</div>}>
+                                <KanbanBoard 
+                                    tasks={tasks} 
+                                    onTaskClick={handleTaskClick}
+                                    onStatusChange={handleStatusChange}
+                                    onDeleteTask={handleMoveToTrash} 
+                                    onArchiveTask={handleArchiveTask} 
+                                    onArchiveAll={handleArchiveAll} 
+                                    currentUser={user} 
+                                />
+                            </Suspense>
+                        </div>
+                    </>
+                  );
+              case 'GEMINI':
+                  return (
+                      <div className="flex flex-col h-full">
+                          <CommonHeader 
+                            title="Gemini Pro" 
+                            subtitle="AI와 대화하며 업무 효율을 높이세요."
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                          />
+                          <Suspense fallback={<div className="p-8">Loading Gemini...</div>}>
+                              <GeminiPage tasks={tasks} currentUser={user} />
+                          </Suspense>
+                      </div>
+                  );
+              case 'SETTINGS':
+                  return (
+                      <div className="flex flex-col h-full">
+                          <CommonHeader 
+                            title="환경 설정" 
+                            subtitle="앱의 기본 설정을 변경합니다."
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                          />
+                          <Suspense fallback={<div className="p-8">Loading Settings...</div>}>
+                            <SettingsPage />
+                          </Suspense>
+                      </div>
+                  );
+              default:
+                return null;
+          }
+      })()}
       
       {(selectedTask || tempTask) && (
         <Suspense fallback={null}>

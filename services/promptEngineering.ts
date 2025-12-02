@@ -262,9 +262,12 @@ class PromptBuilder {
 export async function buildExecutionPlanPrompt(task: Task): Promise<string> {
   const builder = new PromptBuilder();
 
-  await builder
-    .addSystemPrompt('PM_EXPERT')
-    .addKnowledgeBase('EXECUTION_PLAN_GUIDE', task.type || '일반')
+  // 메서드 체이닝 분리 (await 때문)
+  builder.addSystemPrompt('PM_EXPERT');
+  
+  await builder.addKnowledgeBase('EXECUTION_PLAN_GUIDE', task.type || '일반');
+  
+  builder
     .addFewShotExamples(
       EXECUTION_PLAN_EXAMPLES.filter(ex => 
         !task.type || ex.task.type === task.type
@@ -295,9 +298,12 @@ export async function buildExecutionPlanPrompt(task: Task): Promise<string> {
 export async function buildDoDPrompt(task: Task): Promise<string> {
   const builder = new PromptBuilder();
 
-  await builder
-    .addSystemPrompt('QA_EXPERT')
-    .addKnowledgeBase('DOD_GUIDE', task.type || '일반')
+  // 메서드 체이닝 분리 (await 때문)
+  builder.addSystemPrompt('QA_EXPERT');
+  
+  await builder.addKnowledgeBase('DOD_GUIDE', task.type || '일반');
+  
+  builder
     .addFewShotExamples(
       DOD_EXAMPLES.filter(ex => 
         !task.type || ex.task.type === task.type
@@ -329,7 +335,7 @@ export async function buildDoDPrompt(task: Task): Promise<string> {
 export async function buildSolutionDraftPrompt(task: Task): Promise<string> {
   const builder = new PromptBuilder();
 
-  await builder
+  builder
     .addSystemPrompt('TECH_LEAD')
     .addConstraints([
       '마크다운 형식으로 작성해야 합니다',
@@ -354,7 +360,7 @@ export async function buildSolutionDraftPrompt(task: Task): Promise<string> {
 export async function buildResourceRecommendationPrompt(task: Task): Promise<string> {
   const builder = new PromptBuilder();
 
-  await builder
+  builder
     .addSystemPrompt('TECH_LEAD')
     .addConstraints([
       '공식 문서나 신뢰할 수 있는 출처를 우선해야 합니다',

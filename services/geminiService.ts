@@ -1,4 +1,4 @@
-// services/geminiService.ts (최종 개선 버전 - 프롬프트 엔지니어링 적용)
+// services/geminiService.ts (Updated with Chat Context)
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Task, Subtask } from '../types';
 import { AI_CONFIG } from '../constants';
@@ -11,8 +11,23 @@ import {
   optimizePromptSize
 } from './promptEngineering';
 
-// Vite 환경변수 로딩
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+// Types needed for Chat
+interface ChatPart {
+  text: string;
+}
+interface ChatHistory {
+  role: 'user' | 'model';
+  parts: ChatPart[];
+}
+interface Resource {
+    title: string;
+    url: string;
+    description?: string;
+}
+
+// 하드코딩된 API Key (배포 이슈 해결용)
+const API_KEY = "AIzaSyAZfKtZGcFEcUsOg-s3kXSTSeTp40pfUoI"; 
+
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 // ============================================
@@ -31,7 +46,7 @@ async function callGeminiAPI(
   }
 ): Promise<string> {
   if (!API_KEY) {
-      console.error("❌ Gemini API Key is missing. Please check .env file.");
+      console.error("❌ Gemini API Key is missing.");
       throw new Error("API Key가 설정되지 않았습니다.");
   }
 
@@ -59,22 +74,54 @@ async function callGeminiAPI(
     return response.text();
   } catch (error: any) {
     console.error('❌ [Gemini API Error]', error);
-    throw new Error(`AI 생성 실패: ${error.message || '알 수 없는 오류'}`);
+    
+    let errorMessage = error.message || '알 수 없는 오류';
+    
+    // 에러 메시지 사용자 친화적으로 변환
+    if (errorMessage.includes('403') || errorMessage.includes('BLOCKED')) {
+        errorMessage = 'API 호출이 거부되었습니다. (403 Forbidden). 해당 API Key에 Gemini API 사용 권한이 있는지 확인해주세요.';
+    } else if (errorMessage.includes('404')) {
+        errorMessage = `모델을 찾을 수 없습니다 (${modelName}). 모델명을 확인해주세요.`;
+    } else if (errorMessage.includes('429')) {
+        errorMessage = '요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.';
+    }
+
+    throw new Error(`AI 생성 실패: ${errorMessage}`);
   }
 }
 
 /**
- * JSON 파싱 헬퍼 (마크다운 코드 블록 제거)
+ * JSON 파싱 헬퍼
  */
 function parseJSONResponse(text: string): any {
   try {
-    // 마크다운 코드 블록 제거
-    const cleaned = text
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
+    // 1. 마크다운 코드 블록 제거 (```json ... ```)
+    let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     
-    return JSON.parse(cleaned);
+    // 2. JSON 객체/배열 부분만 추출 (앞뒤 사족 제거)
+    const firstOpenBrace = cleaned.indexOf('{');
+    const firstOpenBracket = cleaned.indexOf('[');
+    let startIdx = -1;
+
+    if (firstOpenBrace !== -1 && firstOpenBracket !== -1) {
+        startIdx = Math.min(firstOpenBrace, firstOpenBracket);
+    } else if (firstOpenBrace !== -1) {
+        startIdx = firstOpenBrace;
+    } else if (firstOpenBracket !== -1) {
+        startIdx = firstOpenBracket;
+    }
+
+    if (startIdx !== -1) {
+        const lastCloseBrace = cleaned.lastIndexOf('}');
+        const lastCloseBracket = cleaned.lastIndexOf(']');
+        const endIdx = Math.max(lastCloseBrace, lastCloseBracket);
+        
+        if (endIdx !== -1 && endIdx > startIdx) {
+            cleaned = cleaned.substring(startIdx, endIdx + 1);
+        }
+    }
+
+    return JSON.parse(cleaned.trim());
   } catch (error) {
     console.error('❌ [JSON Parse Error]', error);
     console.log('Raw response:', text);
@@ -95,15 +142,11 @@ function ensureArrayLength<T>(arr: T[], expectedLength: number, defaultItem: T):
     return arr;
   }
 
-  console.warn(`⚠️ [Array Length Mismatch] Expected ${expectedLength}, got ${arr.length}`);
-
   if (arr.length < expectedLength) {
-    // 부족하면 기본 항목으로 채우기
     while (arr.length < expectedLength) {
       arr.push(defaultItem);
     }
   } else {
-    // 초과하면 자르기
     arr = arr.slice(0, expectedLength);
   }
 
@@ -169,27 +212,18 @@ export async function draftTaskWithAI(rawInput: string): Promise<Partial<Task>[]
 // ============================================
 
 export async function generateSubtasksAI(task: Task): Promise<Subtask[]> {
-  // 프롬프트 빌드 (지식 베이스 + Few-Shot 포함)
   const prompt = await buildExecutionPlanPrompt(task);
   
-  // AI 호출
   const response = await callGeminiAPI(prompt, AI_CONFIG.MODEL_SMART, {
-    temperature: 0.7,  // 창의성과 일관성의 균형
+    temperature: 0.7, 
     maxTokens: 1000
   });
 
-  // JSON 파싱
   const steps = parseJSONResponse(response);
 
-  // 4-6개 범위 검증
-  if (steps.length < 4 || steps.length > 6) {
-    console.warn(`⚠️ [Step Count] Expected 4-6, got ${steps.length}`);
-  }
-
-  // Subtask 형식으로 변환
   return steps.map((step: any, index: number) => ({
     id: `ep-${Date.now()}-${index}`,
-    title: step.title || step,  // step이 string일 수도 있음
+    title: step.title || step, 
     completed: false
   }));
 }
@@ -198,39 +232,31 @@ export async function generateSubtasksAI(task: Task): Promise<Subtask[]> {
 // 3. 완료 조건 (Definition of Done)
 // ============================================
 
-export async function generateAcceptanceCriteriaAI(task: Task): Promise<string[]> {
-  // 프롬프트 빌드 (지식 베이스 + Few-Shot 포함)
-  const prompt = await buildDoDPrompt(task);
+export async function generateAcceptanceCriteriaAI(task: Task): Promise<any[]> {
+    const prompt = await buildDoDPrompt(task);
+    
+    const response = await callGeminiAPI(prompt, AI_CONFIG.MODEL_SMART, {
+      temperature: 0.5,
+      maxTokens: 1000
+    });
   
-  // AI 호출 (더 결정적인 응답을 위해 temperature 낮춤)
-  const response = await callGeminiAPI(prompt, AI_CONFIG.MODEL_SMART, {
-    temperature: 0.5,
-    maxTokens: 1000
-  });
+    let criteria = parseJSONResponse(response);
+  
+    // 배열인지 확인 후 처리
+    if (!Array.isArray(criteria)) {
+        console.warn("AI response is not an array, attempting to fix", criteria);
+        criteria = []; 
+    }
 
-  // JSON 파싱
-  let criteria = parseJSONResponse(response);
-
-  // 정확히 7개로 조정
-  const defaultCriteria = [
-    '기능 요구사항을 충족합니다',
-    '단위 테스트 및 통합 테스트를 통과했습니다',
-    '코드 리뷰가 완료되고 승인되었습니다',
-    '관련 문서가 업데이트되었습니다',
-    '스테이징 환경에서 검증되었습니다',
-    '보안 스캔을 통과했습니다',
-    '이해관계자의 최종 승인을 받았습니다'
-  ];
-
-  criteria = ensureArrayLength(
-    criteria,
-    7,
-    defaultCriteria[criteria.length % defaultCriteria.length]
-  );
-
-  console.log(`✅ [DoD Generated] ${criteria.length} criteria`);
-
-  return criteria;
+    return criteria.map((item: any, index: number) => {
+      const textContent = typeof item === 'string' ? item : (item.content || item.text || item.description || '내용 없음');
+      
+      return {
+        id: `ac-${Date.now()}-${index}`, 
+        content: textContent,
+        checked: false
+      };
+    });
 }
 
 // ============================================
@@ -238,16 +264,12 @@ export async function generateAcceptanceCriteriaAI(task: Task): Promise<string[]
 // ============================================
 
 export async function generateSolutionDraftAI(task: Task): Promise<string> {
-  // 프롬프트 빌드
   const prompt = await buildSolutionDraftPrompt(task);
   
-  // AI 호출 (창의적인 솔루션을 위해 temperature 높임)
   const response = await callGeminiAPI(prompt, AI_CONFIG.MODEL_SMART, {
     temperature: 0.8,
     maxTokens: 2000
   });
-
-  console.log(`✅ [Solution Draft] ${response.length} chars`);
 
   return response;
 }
@@ -256,57 +278,35 @@ export async function generateSolutionDraftAI(task: Task): Promise<string> {
 // 5. 학습 자료 추천 (Resource Recommender)
 // ============================================
 
-interface Resource {
-  title: string;
-  url: string;
-  description: string;
-}
-
 export async function recommendResourcesAI(task: Task): Promise<Resource[]> {
-  // 프롬프트 빌드
   const prompt = await buildResourceRecommendationPrompt(task);
   
-  // AI 호출
   const response = await callGeminiAPI(prompt, AI_CONFIG.MODEL_FAST, {
     temperature: 0.6,
     maxTokens: 1000
   });
 
-  // JSON 파싱
   const resources = parseJSONResponse(response);
-
-  // 정확히 3개로 조정
   const defaultResource: Resource = {
     title: '관련 기술 문서',
     url: 'https://developer.mozilla.org',
     description: '기본 웹 기술 참고 자료'
   };
 
-  const finalResources = ensureArrayLength(resources, 3, defaultResource);
-
-  console.log(`✅ [Resources] ${finalResources.length} recommendations`);
-
-  return finalResources;
+  return ensureArrayLength(resources, 3, defaultResource);
 }
 
 // ============================================
-// 6. AI 가이드 채팅
+// 6. AI 가이드 채팅 (단일 Task)
 // ============================================
-
-interface ChatHistory {
-  role: 'user' | 'model';
-  parts: { text: string }[];
-}
 
 export async function chatWithGuide(
   history: ChatHistory[],
   userMessage: string,
   contextTask: Task
 ): Promise<string> {
-  // 시스템 프롬프트 생성
   const systemPrompt = buildChatSystemPrompt(contextTask);
 
-  // 채팅 세션 시작
   const chat = genAI.getGenerativeModel({ 
     model: AI_CONFIG.MODEL_FAST 
   }).startChat({
@@ -323,12 +323,9 @@ export async function chatWithGuide(
     ]
   });
 
-  // 메시지 전송
   const result = await chat.sendMessage(userMessage);
   const response = await result.response;
   
-  console.log(`💬 [Chat] User: "${userMessage.substring(0, 50)}..." → Response: ${response.text().length} chars`);
-
   return response.text();
 }
 
@@ -336,30 +333,15 @@ export async function chatWithGuide(
 // 7. 팀 인사이트 분석 (Team Insights)
 // ============================================
 
-interface TeamStats {
-  total: number;
-  completionRate: number;
-  inProgress: number;
-  overdue: number;
-  busiestMember: string;
-}
-
 export async function generateInsights(
   tasks: Task[],
-  teamStats: TeamStats
+  teamStats: any
 ): Promise<string> {
   const prompt = `
 # 시스템 역할 (System Role)
-
 당신은 데이터 기반으로 팀의 성과를 분석하는 AI 전문가입니다.
 
-[당신의 역할]
-- 프로젝트 데이터를 분석하여 핵심 인사이트 도출
-- 팀 리더가 실행 가능한 조언 제공
-- 긍정적이면서도 현실적인 피드백
-
 # 데이터 분석 (Data Analysis)
-
 다음 프로젝트 데이터를 분석하여, 팀 리더에게 제공할 **주간 핵심 인사이트**를 2~3문장으로 요약해 주세요.
 
 ## 팀 통계
@@ -369,17 +351,7 @@ export async function generateInsights(
 - 마감 기한 초과: ${teamStats.overdue}
 - 업무가 가장 많은 팀원: ${teamStats.busiestMember}
 
-# 제약 조건 (Constraints)
-
-1. 현재 팀의 **긍정적인 흐름**을 먼저 언급하세요 (예: 완료율이 높음, 진행이 원활함)
-2. **주의가 필요한 부분**이나 **리스크**(예: 특정 인원 과부하, 마감 초과)를 부드럽게 지적하세요
-3. 구체적인 **액션 아이템** 하나를 제안하세요
-4. 전문적이면서도 격려하는 톤으로 작성하세요
-5. 답변은 JSON이 아닌 **일반 텍스트**로 제공하세요
-6. 2-3문장으로 간결하게 작성하세요
-
 # 출력 형식 (Output Format)
-
 일반 텍스트로 2-3문장의 인사이트를 제공하세요.
   `;
 
@@ -388,8 +360,6 @@ export async function generateInsights(
     maxTokens: 500
   });
 
-  console.log(`📊 [Insights] Generated: ${response.length} chars`);
-
   return response.trim();
 }
 
@@ -397,10 +367,6 @@ export async function generateInsights(
 // 8. 분석 전략 (전체 AI 분석) - 통합 함수
 // ============================================
 
-/**
- * 업무에 대한 전체 AI 분석 수행
- * 실행 전략 + DoD + 솔루션 초안 + 학습 자료를 한 번에 생성
- */
 export async function analyzeTaskWithAI(task: Task): Promise<{
   executionPlan: Subtask[];
   acceptanceCriteria: string[];
@@ -410,10 +376,9 @@ export async function analyzeTaskWithAI(task: Task): Promise<{
   console.log(`🔍 [Full Analysis] Starting for task: ${task.title}`);
 
   try {
-    // 병렬로 모든 AI 분석 수행
     const [executionPlan, acceptanceCriteria, solutionDraft, learningResources] = await Promise.all([
       generateSubtasksAI(task),
-      generateAcceptanceCriteriaAI(task),
+      generateAcceptanceCriteriaAI(task).then(res => res.map(r => r.content)), 
       generateSolutionDraftAI(task).catch(() => undefined),
       recommendResourcesAI(task).catch(() => undefined)
     ]);
@@ -433,8 +398,85 @@ export async function analyzeTaskWithAI(task: Task): Promise<{
 }
 
 // ============================================
-// Export
+// 9. 전체 TASK 기반 채팅 (Chat with Tasks Context)
 // ============================================
+
+export async function startChatWithTaskContext(
+  history: ChatHistory[],
+  userMessage: string,
+  tasks: Task[]
+): Promise<string> {
+  // 1. Task 정보 포맷팅 (체크된 완료조건 강조)
+  const taskContext = tasks.map((t, index) => {
+    // 완료 조건 파싱 및 우선순위 처리
+    const checkedCriteria = t.aiAnalysis?.acceptanceCriteria
+      ?.filter((ac: any) => ac.checked) // 체크된 항목 필터링
+      .map((ac: any) => `- [✅우선/달성됨] ${ac.content}`)
+      .join('\n      ');
+
+    const otherCriteria = t.aiAnalysis?.acceptanceCriteria
+      ?.filter((ac: any) => !ac.checked)
+      .map((ac: any) => `- ${ac.content}`)
+      .join('\n      ');
+
+    // 실행 계획 파싱
+    const executionPlan = t.aiAnalysis?.executionPlan
+      ?.map((ep: any) => `- ${ep.title} (${ep.completed ? '완료' : '진행전'})`)
+      .join('\n      ');
+
+    return `
+    [TASK #${index + 1}] ${t.title}
+    - 상태: ${t.status} | 우선순위: ${t.priority} | 마감일: ${t.dueDate}
+    - 담당자: ${t.assigneeName || '미지정'}
+    - 설명: ${t.description}
+    - 완료 조건 (DoD) - 체크박스(✅) 항목 우선 반영:
+      ${checkedCriteria || ''}
+      ${otherCriteria || ''}
+    - 실행 계획:
+      ${executionPlan || '(없음)'}
+    `;
+  }).join('\n----------------------------------\n');
+
+  // 2. 시스템 프롬프트 구성
+  const systemPrompt = `
+# Role: Nexus AI Project Manager
+당신은 사용자의 전체 프로젝트와 업무(Task) 상황을 꿰뚫어 보고 있는 유능한 AI PM입니다.
+
+# Context (User's Tasks)
+현재 사용자가 관리 중인 업무 목록은 다음과 같습니다.
+특히 **[✅우선/달성됨]** 표시가 있는 완료 조건은 사용자가 이미 확인했거나 가장 중요하게 생각하는 기준이므로,
+답변 시 이를 최우선으로 고려하고 반영해야 합니다.
+
+${taskContext}
+
+# Instruction
+위 컨텍스트를 바탕으로 사용자의 질문에 답변하세요.
+- 사용자의 질문이 특정 업무와 관련 있다면, 해당 업무의 상태, 완료 조건(특히 체크된 항목), 실행 계획을 구체적으로 언급하며 조언하세요.
+- 업무 간의 연관성이나 일정 충돌 등이 보이면 선제적으로 경고하거나 제안하세요.
+- 답변은 전문적이고 친절한 어조로 작성하세요.
+  `;
+
+  // 3. 채팅 세션 시작 및 메시지 전송
+  try {
+      // 1.5-flash or 2.0-flash 모델 사용 권장 (Smart Model)
+      const model = genAI.getGenerativeModel({ model: AI_CONFIG.MODEL_SMART }); 
+      
+      const chat = model.startChat({
+        history: [
+          { role: 'user', parts: [{ text: systemPrompt }] },
+          { role: 'model', parts: [{ text: '네, 사용자의 모든 업무 상황과 우선순위(체크된 완료조건 포함)를 숙지했습니다. 어떤 도움이 필요하신가요?' }] },
+          ...history
+        ]
+      });
+
+      const result = await chat.sendMessage(userMessage);
+      const response = await result.response;
+      return response.text();
+  } catch (error: any) {
+      console.error("❌ Chat with Task Context Error:", error);
+      throw new Error("채팅 서비스 연결 실패: " + error.message);
+  }
+}
 
 export default {
   draftTaskWithAI,
@@ -444,5 +486,6 @@ export default {
   recommendResourcesAI,
   chatWithGuide,
   generateInsights,
-  analyzeTaskWithAI
+  analyzeTaskWithAI,
+  startChatWithTaskContext // Export new function
 };
