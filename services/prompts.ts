@@ -1,4 +1,3 @@
-
 import { Task } from "../types";
 
 // --- Type Definitions ---
@@ -10,7 +9,7 @@ export interface AIFeature {
   model: string;
   tags: string[];
   // Function to generate the prompt string. Context type varies by feature.
-  promptGenerator: (...args: any[]) => string; 
+  promptGenerator: (...args: any[]) => string;
 }
 
 /**
@@ -148,6 +147,83 @@ export const AI_FEATURES: AIFeature[] = [
       - description: 추천 이유 (한 줄 요약)
     `
   },
+  { // THIS IS THE NEWLY ADDED FEATURE FOR KNOWLEDGE HUB
+    id: 'analyzeResource',
+    name: '자료 분석 (Knowledge Hub)',
+    description: 'URL의 콘텐츠(영상/문서)를 분석하여 제목, 요약, 챕터, 키워드 등 구조화된 지식 데이터를 생성합니다.',
+    model: 'gemini-pro',
+    tags: ['Knowledge Management', 'Analysis', 'URL'],
+    promptGenerator: (url: string, videoId?: string | null) => {
+        const searchTarget = videoId ? `site:youtube.com "${videoId}"` : url;
+        return `
+        당신은 기업 내부 지식관리(KM) 시스템을 위한 영상/문서 분석 AI입니다.
+        제공된 URL의 콘텐츠(영상 또는 문서)를 분석하여 체계적으로 데이터베이스에 저장할 수 있는 구조화된 정보를 추출하세요.
+
+        [TARGET URL]
+        ${url}
+        
+        [CRITICAL HINT - For Search Grounding]
+        Search Query: ${searchTarget}
+        Video ID: ${videoId || 'N/A'}
+        
+        [FALLBACK STRATEGY]
+        1. **Primary Search**: Attempt to find specific content, transcript, or chapters.
+        2. **Secondary Search**: If direct content is restricted, search for "Video Title", "Channel Name", and "Description" using the Video ID or URL.
+        3. **Reconstruction**: If transcript is missing, YOU MUST reconstruct the summary and metadata based on title, thumbnail text, and description found in search results.
+        DO NOT RETURN "NOT FOUND". Always provide the best possible estimation based on available metadata.
+
+        [OUTPUT FORMAT - JSON ONLY]
+        아래 JSON 스키마에 맞춰 응답해주세요. 순수 JSON만 반환하세요.
+
+        {
+          "basicInfo": {
+            "title": "제목을 명확하고 간결하게 (최대 50자, 찾지 못하면 URL 표기)",
+            "summary": "핵심 내용을 1-2문장으로 요약 (정보가 없으면 '분석 실패: 메타데이터 부족' 표기)",
+            "level": "BEGINNER, INTERMEDIATE, ADVANCED 중 하나 선택 (기본값: BEGINNER)",
+            "tags": ["관련 기술/주제/분야를 나타내는 태그 5-7개"],
+            "author": "작성자나 발표자 (없으면 null)",
+            "contentType": "video 또는 article (URL에 따라 자동 판단)"
+          },
+          
+          "metadata": {
+            "duration": "영상의 길이(초 단위, 정수, 없으면 0)",
+            "language": "ko 또는 en 등 언어 코드",
+            "category": "개발, 디자인, 마케팅, 운영, 기타 중 하나",
+            "subCategory": "세부 카테고리 (예: Frontend, Backend, UI/UX 등)",
+            "uploadedAt": "현재 시간을 ISO 8601 형식으로",
+            "department": "해당 내용과 가장 관련있는 부서명 추정 (없으면 null)"
+          },
+          
+          "searchOptimization": {
+            "keywords": ["검색에 유용한 키워드 10-15개 추출"],
+            "searchableText": "주요 내용을 포괄하는 텍스트 (200-300자).",
+            "chapters": [
+              {
+                "title": "챕터 제목",
+                "timestamp": "시작시간-종료시간 (예: 00:00-05:30)",
+                "summary": "해당 구간의 내용 요약"
+              }
+            ]
+          },
+          
+          "managementInfo": {
+            "status": "active",
+            "visibility": "team",
+            "originalFileUrl": "${url}",
+            "thumbnailUrl": null,
+            "fileSize": null,
+            "lastUpdated": "현재 시간을 ISO 8601 형식으로"
+          }
+        }
+
+        중요 지침:
+        - 영상이 5분 미만이면 chapters를 빈 배열로 두세요.
+        - 영상이 5분 이상이면 3-5개의 의미있는 챕터로 구분하세요.
+        - 정보가 부족하면 chapters 대신 keywords를 풍부하게 작성하세요.
+        - 한국어로 작성하세요.
+        `;
+      }
+  },
   {
     id: 'chatGuideSystem',
     name: 'AI 가이드 시스템 프롬프트',
@@ -196,6 +272,7 @@ export const PromptTemplates = {
   generateAcceptanceCriteria: AI_FEATURES.find(f => f.id === 'generateAcceptanceCriteria')!.promptGenerator,
   generateSolutionDraft: AI_FEATURES.find(f => f.id === 'generateSolutionDraft')!.promptGenerator,
   recommendResources: AI_FEATURES.find(f => f.id === 'recommendResources')!.promptGenerator,
+  analyzeResource: AI_FEATURES.find(f => f.id === 'analyzeResource')!.promptGenerator, // THIS LINE IS ADDED
   chatGuideSystem: AI_FEATURES.find(f => f.id === 'chatGuideSystem')!.promptGenerator,
   generateInsights: AI_FEATURES.find(f => f.id === 'generateInsights')!.promptGenerator,
 };
