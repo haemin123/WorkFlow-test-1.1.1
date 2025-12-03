@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ViewMode } from '../types';
-import { LayoutDashboard, Sparkles, Bot, BarChart3, Settings, Archive, ChevronLeft, ChevronRight } from './Icons'; // Chevron icons needed
+// --- BookOpen icon added for Knowledge Hub ---
+import { LayoutDashboard, Sparkles, Bot, BarChart3, Settings, Archive, ChevronLeft, ChevronRight, BookOpen } from './Icons';
 
 interface LayoutProps { 
     children: React.ReactNode; 
@@ -17,7 +18,6 @@ const NavButton = ({ icon, label, active, onClick, collapsed }: { icon: React.Re
   >
      {React.cloneElement(icon as React.ReactElement<any>, { className: `w-5 h-5 flex-shrink-0 ${active ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}` })}
      
-     {/* Text Label - Hidden when collapsed */}
      {!collapsed && (
         <span className="ml-3 text-sm truncate transition-opacity duration-200">{label}</span>
      )}
@@ -33,12 +33,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
 
   return (
     <div className="min-h-screen flex font-sans bg-white text-gray-900">
-      {/* Sidebar */}
       <aside 
         className={`${isSidebarOpen ? 'w-64' : 'w-20'} 
         transition-all duration-300 ease-in-out border-r border-gray-200 flex flex-col bg-gray-50/80 backdrop-blur-md fixed h-full z-20`}
       >
-        {/* Toggle Button - Centered Vertically */}
         <button 
             onClick={toggleSidebar}
             className="absolute -right-3 top-1/2 transform -translate-y-1/2 w-6 h-6 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-sm text-gray-400 hover:text-gray-600 z-50 hover:scale-110 transition-transform"
@@ -51,7 +49,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
               {isSidebarOpen ? (
                   <img src="/logo.png" alt="Baro.ai Logo" className="w-auto h-8 object-contain" />
               ) : (
-                  // Simple Logo Icon for collapsed state (Just using part of logo or different styling)
                   <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" /> 
               )}
           </div>
@@ -77,6 +74,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
               label="Gemini Pro" 
               active={currentView === 'GEMINI'} 
               onClick={() => onNavigate('GEMINI')}
+              collapsed={!isSidebarOpen}
+          />
+          
+          {/* --- NEW KNOWLEDGE HUB BUTTON ADDED --- */}
+          <NavButton 
+              icon={<BookOpen />} 
+              label="Knowledge Hub" 
+              active={currentView === 'KNOWLEDGE'} 
+              onClick={() => onNavigate('KNOWLEDGE')}
               collapsed={!isSidebarOpen}
           />
           
@@ -113,13 +119,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
                   </div>
                </div>
            ) : (
-               // Collapsed Credit View
                 <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center gap-1 group relative cursor-help">
                     <Sparkles className="w-4 h-4 text-blue-600" />
                     <div className="w-full bg-gray-100 rounded-full h-1 w-8">
                          <div className="bg-blue-600 h-1 rounded-full w-[45%]"></div>
                     </div>
-                    {/* Tooltip on hover */}
                     <div className="absolute left-full ml-2 bottom-0 w-32 bg-gray-800 text-white text-xs p-2 rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none z-50">
                         AI 크레딧: 450/1000
                     </div>
@@ -128,7 +132,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
         </div>
       </aside>
 
-      {/* Main Content */}
       <main 
         className={`flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-300 ease-in-out
         ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}
