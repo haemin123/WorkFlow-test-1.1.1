@@ -1,6 +1,10 @@
-
 import React from 'react';
-import { Task, Subtask, AIAnalysis, ChatMessage } from '../types';
+// --- TYPES IMPORTED ---
+// KnowledgeResource added for the new view
+import { Task, Subtask, AIAnalysis, ChatMessage, KnowledgeResource } from '../types';
+
+// --- ICONS IMPORTED ---
+// More icons and the custom 'Icons' object are added for the new view
 import { 
     Sparkles, 
     CheckCircle2, 
@@ -15,13 +19,23 @@ import {
     FileCode,
     Loader2,
     Send,
-    ListTodo
+    ListTodo,
+    ArrowLeft, // For Back button
+    Tag,
+    BarChart3 as BarChart, // Renamed to avoid conflicts
+    BookOpen as Book,
+    Info,
+    Clock,
+    Users,
+    Youtube,
+    Building,
+    Icons // Custom SVG Icons object
 } from './Icons';
 import { UI_TEXTS } from '../constants';
 
-// Mock Markdown Renderer with Type Guard
+// Mock Markdown Renderer with Type Guard (Existing Component)
 const MarkdownRenderer = ({ content }: { content: string }) => {
-    if (!content || typeof content !== 'string') return null; // Added type guard
+    if (!content || typeof content !== 'string') return null;
     
     try {
         const htmlContent = content
@@ -30,7 +44,6 @@ const MarkdownRenderer = ({ content }: { content: string }) => {
             .replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold mb-2 mt-4">$1</h3>')
             .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
             .replace(/\n/gim, '<br />')
-            // Code block styling
             .replace(/```([\s\S]*?)```/gim, '<pre class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4 font-mono text-sm">$1</pre>'); 
 
         return <div className="prose prose-sm max-w-none text-gray-600" dangerouslySetInnerHTML={{ __html: htmlContent }} />;
@@ -40,6 +53,9 @@ const MarkdownRenderer = ({ content }: { content: string }) => {
     }
 };
 
+// --- EXISTING VIEWS (Unchanged) ---
+// DraftView, StrategyView, SubtaskView, ChatView, DoDView, SolutionView
+// ... (Your existing components are kept here as they are)
 
 // --- 1. Draft View (Creation Mode) ---
 interface DraftViewProps {
@@ -128,7 +144,6 @@ export const StrategyView: React.FC<StrategyViewProps> = ({ analysis, onAnalyze 
         );
     }
 
-    // Safe data handling
     let steps: { step: number; title: string; content: string }[] = [];
     let isLegacyString = false;
 
@@ -172,7 +187,6 @@ export const StrategyView: React.FC<StrategyViewProps> = ({ analysis, onAnalyze 
                 )}
             </div>
 
-            {/* Suggested Resources */}
             {analysis.suggestedResources && analysis.suggestedResources.length > 0 && (
                 <div className="border-t border-gray-100 pt-8">
                     <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -266,7 +280,7 @@ interface ChatViewProps {
     inputMsg: string;
     setInputMsg: (val: string) => void;
     onSend: () => void;
-    disabled?: boolean; // Added disabled prop
+    disabled?: boolean;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({ messages, inputMsg, setInputMsg, onSend, disabled }) => (
@@ -409,3 +423,50 @@ export const SolutionView: React.FC<SolutionViewProps> = ({ solution, onGenerate
         </div>
     );
 };
+
+// --- [NEW] 7. KNOWLEDGE HUB RESOURCE VIEW ---
+
+interface KnowledgeResourceViewProps {
+  resource: KnowledgeResource;
+  onBack: () => void;
+}
+
+const getYouTubeThumbnail = (url: string) => {
+    const videoIdMatch = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return videoIdMatch ? `https://img.youtube.com/vi/${videoIdMatch[1]}/hqdefault.jpg` : null;
+};
+
+export const KnowledgeResourceView: React.FC<KnowledgeResourceViewProps> = ({ resource, onBack }) => {
+  const thumbnailUrl = resource.basicInfo.contentType === 'video' 
+    ? getYouTubeThumbnail(resource.managementInfo.originalFileUrl || '') 
+    : resource.managementInfo.thumbnailUrl;
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 bg-white min-h-screen animate-fade-in">
+      <header className="mb-6 flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center text-sm font-medium text-gray-600 hover:text-gray-900">
+          <ArrowLeft size={18} className="mr-2" />
+          Back to Hub
+        </button>
+        <a href={resource.managementInfo.originalFileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800">
+          Open Original <ExternalLink size={16} className="ml-1" />
+        </a>
+      </header>
+      
+      <div className="max-w-4xl mx-auto">
+        {thumbnailUrl && (
+            <div className="mb-6 rounded-lg overflow-hidden shadow-lg relative">
+                <img src={thumbnailUrl} alt={resource.basicInfo.title} className="w-full h-auto object-cover" />
+                {resource.basicInfo.contentType === 'video' && (
+                    <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                        <Youtube size={64} className="text-white opacity-80" />
+                    </div>
+                )}
+            </div>
+        )}
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">{resource.basicInfo.title}</h1>
+        <p className="text-base sm:text-lg text-gray-700 mb-6">{resource.basicInfo.summary}</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <InfoCard icon={<Book size={20} />} title="Level" value={resource.basicInfo.level} />
+          <InfoCard icon={<Users size={20} />} title="Author" value={resource.basicInfo.author || 'N
