@@ -17,7 +17,7 @@ export enum Priority {
   LOW = 'LOW'
 }
 
-export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS' | 'ARCHIVE' | 'PROFILE';
+export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS' | 'ARCHIVE' | 'PROFILE' | 'KNOWLEDGE'; // Added KNOWLEDGE
 
 // Extended User Interface for Firestore Profile
 export interface User {
@@ -106,4 +106,54 @@ export interface ChatMessage {
   role: 'user' | 'model';
   content: string;
   timestamp: number;
+}
+
+// --- Knowledge Hub Models ---
+export type ResourceType = 'video' | 'article' | 'document' | 'other';
+
+export interface BasicInfo {
+  title: string;
+  summary: string;
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  tags: string[];
+  author?: string | null;
+  contentType: ResourceType;
+}
+
+export interface MetaData {
+  duration?: number; // 초 단위 (영상일 경우)
+  language?: string;
+  category?: string;
+  subCategory?: string;
+  uploadedAt?: string;
+  department?: string | null;
+}
+
+export interface Chapter {
+  title: string;
+  timestamp: string;
+  summary: string;
+}
+
+export interface SearchOptimization {
+  keywords: string[];
+  searchableText?: string;
+  chapters: Chapter[];
+}
+
+export interface ManagementInfo {
+  status: 'active' | 'draft' | 'archived';
+  visibility: 'public' | 'team' | 'private';
+  originalFileUrl?: string | null;
+  thumbnailUrl?: string | null;
+  lastUpdated: string;
+}
+
+export interface KnowledgeResource {
+  id: string;
+  basicInfo: BasicInfo;
+  metadata: MetaData;
+  searchOptimization: SearchOptimization;
+  managementInfo: ManagementInfo;
+  createdAt: number;
 }

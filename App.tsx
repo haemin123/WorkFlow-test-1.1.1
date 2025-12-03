@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Layout } from './components/Layout';
 import { Task, TaskStatus, Priority, ViewMode } from './types';
 import { taskService } from './services/taskService'; 
-import { Plus } from './components/Icons';
+import { Plus, Search } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
 import { LandingPage } from './components/LandingPage'; // Import LandingPage
 import { auth } from './firebaseConfig';
@@ -24,6 +24,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then(module 
 const Insights = lazy(() => import('./components/Insights').then(module => ({ default: module.Insights })));
 const ArchivePage = lazy(() => import('./components/ArchivePage').then(module => ({ default: module.ArchivePage })));
 const ProfilePage = lazy(() => import('./components/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const KnowledgeHub = lazy(() => import('./components/KnowledgeHub').then(module => ({ default: module.KnowledgeHub }))); // Added
 const GoogleProfileModal = lazy(() => import('./components/GoogleProfileModal').then(module => ({ default: module.GoogleProfileModal })));
 
 export default function App() {
@@ -42,7 +43,7 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const view = params.get('view');
       // Validate if the view parameter matches ViewMode types
-      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS', 'KNOWLEDGE'].includes(view)) {
         return view as ViewMode;
       }
     }
@@ -61,6 +62,10 @@ export default function App() {
   // Profile Check State
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(false);
+  
+  // Knowledge Hub State
+  const [knowledgeSearchQuery, setKnowledgeSearchQuery] = useState('');
+  const [isKnowledgeAddModalOpen, setIsKnowledgeAddModalOpen] = useState(false);
 
   // Function to update view and URL
   const updateView = (newView: ViewMode) => {
@@ -75,7 +80,7 @@ export default function App() {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const view = params.get('view');
-      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS', 'KNOWLEDGE'].includes(view)) {
         setCurrentView(view as ViewMode);
         setShowLanding(false);
       } else if (!view) {
@@ -536,6 +541,45 @@ export default function App() {
                             </Suspense>
                         </div>
                     </>
+                  );
+              case 'KNOWLEDGE':
+                  return (
+                      <div className="flex flex-col h-full">
+                          <CommonHeader 
+                            title="지식 허브" 
+                            subtitle="팀 스마트 학습 라이브러리"
+                            user={user}
+                            onLogout={handleLogout}
+                            onNavigateProfile={() => updateView('PROFILE')}
+                          >
+                             <div className="flex items-center gap-4">
+                                <div className="relative w-64">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="자료 검색..." 
+                                        value={knowledgeSearchQuery}
+                                        onChange={(e) => setKnowledgeSearchQuery(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => setIsKnowledgeAddModalOpen(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-[#306364] text-white rounded-full text-sm font-bold hover:bg-[#254d4e] transition-colors shadow-sm"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    자료 추가
+                                </button>
+                             </div>
+                          </CommonHeader>
+                          <Suspense fallback={<div className="p-8">Loading Knowledge Hub...</div>}>
+                              <KnowledgeHub 
+                                searchQuery={knowledgeSearchQuery}
+                                isAddModalOpen={isKnowledgeAddModalOpen}
+                                onCloseAddModal={() => setIsKnowledgeAddModalOpen(false)}
+                              />
+                          </Suspense>
+                      </div>
                   );
               case 'GEMINI':
                   return (

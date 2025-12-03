@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ViewMode } from '../types';
-import { LayoutDashboard, Sparkles, Bot, BarChart3, Settings, Archive, ChevronLeft, ChevronRight } from './Icons'; // Chevron icons needed
+import { LayoutDashboard, Sparkles, Bot, BarChart3, Settings, Archive, ChevronLeft, ChevronRight, BookOpen } from './Icons'; // BookOpen added
 
 interface LayoutProps { 
     children: React.ReactNode; 
@@ -72,6 +72,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentView, onNavigat
               onClick={() => onNavigate('BOARD')}
               collapsed={!isSidebarOpen}
           />
+          
+          {/* Knowledge Hub Tab */}
+          <NavButton 
+              icon={<BookOpen />} 
+              label="지식 허브" 
+              active={currentView === 'KNOWLEDGE'} 
+              onClick={() => onNavigate('KNOWLEDGE')}
+              collapsed={!isSidebarOpen}
+          />
+
           <NavButton 
               icon={<Bot />} 
               label="Gemini Pro" 
