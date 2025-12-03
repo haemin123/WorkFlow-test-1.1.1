@@ -1,4 +1,3 @@
-
 export enum TaskStatus {
   REQUESTED = 'REQUESTED',
   CHECKED = 'CHECKED',
@@ -17,7 +16,8 @@ export enum Priority {
   LOW = 'LOW'
 }
 
-export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS' | 'ARCHIVE' | 'PROFILE';
+// 'KNOWLEDGE' mode has been added for the Knowledge Hub feature
+export type ViewMode = 'BOARD' | 'GEMINI' | 'INSIGHT' | 'SETTINGS' | 'ARCHIVE' | 'PROFILE' | 'KNOWLEDGE';
 
 // Extended User Interface for Firestore Profile
 export interface User {
@@ -106,4 +106,55 @@ export interface ChatMessage {
   role: 'user' | 'model';
   content: string;
   timestamp: number;
+}
+
+// --- NEW TYPES FOR KNOWLEDGE HUB ---
+
+export type ResourceType = 'video' | 'article' | 'document' | 'other';
+
+export interface BasicInfo {
+  title: string;
+  summary: string;
+  level: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  tags: string[];
+  author?: string | null;
+  contentType: ResourceType;
+}
+
+export interface MetaData {
+  duration?: number; // seconds
+  language?: string;
+  category?: string;
+  subCategory?: string;
+  uploadedAt?: string;
+  department?: string | null;
+}
+
+export interface Chapter {
+  title: string;
+  timestamp: string;
+  summary: string;
+}
+
+export interface SearchOptimization {
+  keywords: string[];
+  searchableText?: string;
+  chapters: Chapter[];
+}
+
+export interface ManagementInfo {
+  status: 'active' | 'draft' | 'archived';
+  visibility: 'public' | 'team' | 'private';
+  originalFileUrl?: string | null;
+  thumbnailUrl?: string | null;
+  fileSize?: number | null;
+  lastUpdated: string;
+}
+
+export interface KnowledgeResource {
+  id: string;
+  basicInfo: BasicInfo;
+  metadata: MetaData;
+  searchOptimization: SearchOptimization;
+  managementInfo: ManagementInfo;
 }
