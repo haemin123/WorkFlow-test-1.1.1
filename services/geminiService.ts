@@ -25,8 +25,13 @@ interface Resource {
     description?: string;
 }
 
-// 하드코딩된 API Key (배포 이슈 해결용)
-const API_KEY = "AIzaSyAZfKtZGcFEcUsOg-s3kXSTSeTp40pfUoI"; 
+// Securely get API Key from environment variables
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!API_KEY) {
+  console.error("❌ VITE_GEMINI_API_KEY is not set in your .env file.");
+  // The app handles this gracefully in callGeminiAPI
+}
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
@@ -47,7 +52,7 @@ async function callGeminiAPI(
 ): Promise<string> {
   if (!API_KEY) {
       console.error("❌ Gemini API Key is missing.");
-      throw new Error("API Key가 설정되지 않았습니다.");
+      throw new Error("API Key가 설정되지 않았습니다. .env 파일에 VITE_GEMINI_API_KEY를 추가하세요.");
   }
 
   try {
@@ -76,9 +81,10 @@ async function callGeminiAPI(
     console.error('❌ [Gemini API Error]', error);
     
     let errorMessage = error.message || '알 수 없는 오류';
-    
-    // 에러 메시지 사용자 친화적으로 변환
-    if (errorMessage.includes('403') || errorMessage.includes('BLOCKED')) {
+
+    if (error.message.includes('API key not valid')) {
+        errorMessage = 'API 키가 유효하지 않습니다. .env 파일의 VITE_GEMINI_API_KEY를 확인하세요.';
+    } else if (errorMessage.includes('403') || errorMessage.includes('BLOCKED')) {
         errorMessage = 'API 호출이 거부되었습니다. (403 Forbidden). 해당 API Key에 Gemini API 사용 권한이 있는지 확인해주세요.';
     } else if (errorMessage.includes('404')) {
         errorMessage = `모델을 찾을 수 없습니다 (${modelName}). 모델명을 확인해주세요.`;

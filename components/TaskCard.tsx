@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Task, Priority } from '../types';
 import { AlertCircle, Calendar, Clock, Trash2, Archive, Loader2, Sparkles } from './Icons';
 import { formatDate } from '../utils/formatters';
@@ -25,22 +25,24 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   index,
 }) => {
   const [showAiCompleted, setShowAiCompleted] = useState(false);
+  const prevAiStatusRef = useRef(task.aiStatus);
 
   useEffect(() => {
-    // Only show the AI completed badge if it was updated recently (within 10 seconds)
-    // This prevents the badge from showing up again on page refresh
-    const isRecentlyUpdated = task.updatedAt && (Date.now() - task.updatedAt < 10000);
-
-    if (task.aiStatus === 'COMPLETED' && isRecentlyUpdated) {
+    // Only show animation if status CHANGED to COMPLETED while the component was mounted.
+    // This prevents showing the animation on initial load/refresh if the status is already COMPLETED.
+    if (task.aiStatus === 'COMPLETED' && prevAiStatusRef.current !== 'COMPLETED') {
       setShowAiCompleted(true);
       const timer = setTimeout(() => {
         setShowAiCompleted(false);
-      }, 5000); // Hide after 5 seconds
+      }, 5000);
       return () => clearTimeout(timer);
-    } else {
+    } else if (task.aiStatus !== 'COMPLETED') {
         setShowAiCompleted(false);
     }
-  }, [task.aiStatus, task.updatedAt]);
+
+    // Update the ref to current status for next compare
+    prevAiStatusRef.current = task.aiStatus;
+  }, [task.aiStatus]);
 
   return (
     <div

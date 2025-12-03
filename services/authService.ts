@@ -10,7 +10,7 @@ import {
     updateProfile,
     User as FirebaseUser
 } from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { auth, db, storage } from "../firebaseConfig";
 import { User } from "../types";
@@ -60,6 +60,15 @@ export const authService = {
             return snap.data() as User;
         }
         return null;
+    },
+
+    getAllUsers: async (): Promise<User[]> => {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        const users: User[] = [];
+        querySnapshot.forEach((doc) => {
+            users.push(doc.data() as User);
+        });
+        return users;
     },
 
     updateUserProfile: async (uid: string, data: Partial<User>) => {

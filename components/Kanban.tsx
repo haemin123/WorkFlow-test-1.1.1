@@ -1,17 +1,18 @@
-import React, { useState, useMemo } from 'react';
-import { Task, TaskStatus, Priority } from '../types';
-import { KANBAN_COLUMNS } from '../constants';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Task, TaskStatus, Priority, User } from '../types';
+import { KANBAN_COLUMNS, MOCK_USERS } from '../constants';
 import { getSortedAndFilteredTasks, SortOption } from '../utils/taskHelpers';
 import { KanbanToolbar } from './KanbanToolbar';
 import { KanbanColumn } from './KanbanColumn';
+import { authService } from '../services/authService';
 
 interface KanbanProps {
   tasks: Task[];
   onTaskClick: (task: Task) => void;
   onStatusChange: (taskId: string, newStatus: TaskStatus) => void;
   onDeleteTask: (taskId: string) => void;
-  onArchiveTask?: (taskId: string) => void; // Optional Archive Handler
-  onArchiveAll?: (tasks: Task[]) => void; // Bulk Archive
+  onArchiveTask?: (taskId: string) => void; 
+  onArchiveAll?: (tasks: Task[]) => void; 
   currentUser?: any; 
 }
 
@@ -33,12 +34,85 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
   const [onlyMyTasks, setOnlyMyTasks] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('NONE');
 
-  // --- Smart Logic using Utility ---
+  // Multi-Select Org Filters
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [selectedPositions, setSelectedPositions] = useState<string[]>([]); // Job Titles
+
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [teams, setTeams] = useState<string[]>([]);
+  const [positions, setPositions] = useState<string[]>([]);
+  const [userMap, setUserMap] = useState<Record<string, User>>({});
+
+  // Load Users for Filtering
+  useEffect(() => {
+      const loadUsers = async () => {
+          try {
+              const users = await authService.getAllUsers();
+              
+              // Enhance Mock Users with Fake Org Data for Demo
+              const enhancedMockUsers = MOCK_USERS.map(u => ({
+                  ...u,
+                  department: u.id === 'u1' ? '웹 애플리케이션' : '모바일 앱',
+                  team: u.id === 'u1' ? '프론트엔드' : '디자인',
+                  jobTitle: u.id === 'u1' ? '팀장' : '파트원'
+              }));
+
+              const map: Record<string, User> = {};
+              
+              [...enhancedMockUsers, ...users].forEach(u => {
+                  map[u.id] = u;
+              });
+
+              const deptSet = new Set<string>();
+              const teamSet = new Set<string>();
+              const posSet = new Set<string>();
+
+              Object.values(map).forEach(u => {
+                  if (u.department) deptSet.add(u.department);
+                  if (u.team) teamSet.add(u.team);
+                  if (u.jobTitle) posSet.add(u.jobTitle);
+              });
+
+              setUserMap(map);
+              setDepartments(Array.from(deptSet).sort());
+              setTeams(Array.from(teamSet).sort());
+              setPositions(Array.from(posSet).sort());
+          } catch (e) {
+              console.error("Failed to load users for filtering", e);
+          }
+      };
+      loadUsers();
+  }, []);
+
+  // --- Smart Logic using Utility + Org Filter ---
   const processedTasks = useMemo(() => {
     // 1. First, filter out archived tasks and trashed tasks for the main board
-    const activeTasks = tasks.filter(t => !t.archived && !t.inTrash);
+    let activeTasks = tasks.filter(t => !t.archived && !t.inTrash);
 
-    // 2. Then apply sorting and filtering
+    // 2. Org Filtering (Department, Team, Position) - Multi-Select Support
+    if (selectedDepartments.length > 0) {
+        activeTasks = activeTasks.filter(t => {
+            const user = userMap[t.assigneeId];
+            return user && user.department && selectedDepartments.includes(user.department);
+        });
+    }
+
+    if (selectedTeams.length > 0) {
+        activeTasks = activeTasks.filter(t => {
+            const user = userMap[t.assigneeId];
+            return user && user.team && selectedTeams.includes(user.team);
+        });
+    }
+
+    if (selectedPositions.length > 0) {
+        activeTasks = activeTasks.filter(t => {
+            const user = userMap[t.assigneeId];
+            return user && user.jobTitle && selectedPositions.includes(user.jobTitle);
+        });
+    }
+
+    // 3. Then apply sorting and filtering (Search, Priority, MyTasks)
     return getSortedAndFilteredTasks(
       activeTasks,
       {
@@ -49,9 +123,9 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
       },
       sortBy
     );
-  }, [tasks, searchQuery, filterPriority, onlyMyTasks, sortBy, currentUser]);
+  }, [tasks, searchQuery, filterPriority, onlyMyTasks, sortBy, currentUser, selectedDepartments, selectedTeams, selectedPositions, userMap]);
 
-  // Drag Handlers
+  // Drag Handlers (omitted for brevity, same as before)
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     setDraggedTaskId(taskId);
     e.dataTransfer.effectAllowed = 'move';
@@ -60,7 +134,7 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
     setTimeout(() => el.classList.add('opacity-50', 'scale-95', 'grayscale'), 0);
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = (e: React.DragEvent, status: TaskStatus) => {
     setDraggedTaskId(null);
     setDragOverColumn(null);
     const el = e.target as HTMLElement;
@@ -96,13 +170,23 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
         setFilterPriority={setFilterPriority}
         sortBy={sortBy}
         setSortBy={setSortBy}
+        
+        departments={departments}
+        selectedDepartments={selectedDepartments}
+        setSelectedDepartments={setSelectedDepartments}
+        
+        teams={teams}
+        selectedTeams={selectedTeams}
+        setSelectedTeams={setSelectedTeams}
+
+        positions={positions}
+        selectedPositions={selectedPositions}
+        setSelectedPositions={setSelectedPositions}
       />
 
       {/* --- Kanban Columns (Dynamic Rendering) --- */}
       <div className="flex gap-8 h-full min-w-max pb-4 flex-1">
         {KANBAN_COLUMNS.map((col) => {
-          // Fix: CHECKED 컬럼에 SENT(승인) 상태도 포함하여 데이터 호환성 확보
-          // '검토/승인' 탭에서 Checked 상태와 Sent 상태를 모두 보여줍니다.
           const colTasks = processedTasks.filter((t) => {
               if (col.id === TaskStatus.CHECKED) {
                   return t.status === TaskStatus.CHECKED || (t.status as string) === 'SENT';
@@ -121,13 +205,13 @@ export const KanbanBoard: React.FC<KanbanProps> = ({
               dragOverColumn={dragOverColumn}
               onTaskClick={onTaskClick}
               onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
+              onDragEnd={(e) => handleDragEnd(e, col.id)}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onDeleteTask={onDeleteTask}
-              onArchiveTask={onArchiveTask} // Pass archive handler
-              onArchiveAll={onArchiveAll} // Pass bulk archive handler
+              onArchiveTask={onArchiveTask} 
+              onArchiveAll={onArchiveAll} 
             />
           );
         })}

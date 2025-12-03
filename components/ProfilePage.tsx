@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { authService } from '../services/authService';
 import { User, Lock, Save, Loader2, UserCircle, Camera, Trash2 } from 'lucide-react';
 import { User as UserType } from '../types';
+import { INITIAL_ORGANIZATION_DATA } from '../firebase-dropdown-config';
 
 interface ProfilePageProps {
   currentUser: any;
@@ -24,9 +25,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwMsg, setPwMsg] = useState('');
 
+  // Dynamic Team Options
+  const [availableTeams, setAvailableTeams] = useState<string[]>([]);
+
   useEffect(() => {
     loadProfile();
   }, [currentUser]);
+
+  // Update available teams when profile department changes
+  useEffect(() => {
+      if (profile?.department && INITIAL_ORGANIZATION_DATA.departments.팀매핑[profile.department]) {
+          setAvailableTeams(INITIAL_ORGANIZATION_DATA.departments.팀매핑[profile.department]);
+      } else {
+          setAvailableTeams([]);
+      }
+  }, [profile?.department]);
 
   const loadProfile = async () => {
     if (!currentUser) return;
@@ -44,9 +57,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser }) => {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       if (profile) {
-          setProfile({ ...profile, [e.target.name]: e.target.value });
+          const { name, value } = e.target;
+          if (name === 'department') {
+               setProfile({ ...profile, [name]: value, team: '' }); // Reset team on dept change
+          } else {
+               setProfile({ ...profile, [name]: value });
+          }
       }
   };
 
@@ -90,6 +108,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser }) => {
       e.preventDefault();
       if (!profile || !currentUser) return;
       
+      // Validation Check
+      if (!profile.name?.trim() || !profile.department || !profile.team || !profile.position || !profile.jobTitle) {
+          alert("모든 필수 항목을 입력/선택해주세요.");
+          return;
+      }
+
       setSaving(true);
       try {
           let downloadURL = profile.profileImageUrl;
@@ -110,6 +134,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser }) => {
           setSelectedFile(null); // Reset file selection
 
           alert("프로필이 업데이트되었습니다.");
+          
+          // Go back to previous page
+          window.history.back();
+
       } catch (e: any) {
           alert("업데이트 실패: " + e.message);
       } finally {
@@ -216,24 +244,91 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ currentUser }) => {
                                 <input type="email" value={profile.email} disabled className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 cursor-not-allowed" />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-gray-500">이름</label>
-                                <input name="name" type="text" value={profile.name} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
+                                <label className="text-xs font-bold text-gray-500">이름 <span className="text-red-500">*</span></label>
+                                <input name="name" type="text" required value={profile.name} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
                             </div>
+                            
+                            {/* 본부 */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-gray-500">본부</label>
-                                <input name="department" type="text" value={profile.department || ''} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
+                                <label className="text-xs font-bold text-gray-500">본부 <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <select 
+                                        name="department" 
+                                        required 
+                                        value={profile.department || ''} 
+                                        onChange={handleChange} 
+                                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors appearance-none bg-white"
+                                    >
+                                        <option value="">본부 선택</option>
+                                        {INITIAL_ORGANIZATION_DATA.departments.본부.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                                </div>
                             </div>
+
+                            {/* 팀 */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-gray-500">팀</label>
-                                <input name="team" type="text" value={profile.team || ''} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
+                                <label className="text-xs font-bold text-gray-500">팀 <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <select 
+                                        name="team" 
+                                        required 
+                                        value={profile.team || ''} 
+                                        onChange={handleChange}
+                                        disabled={!profile.department} // Disable if no department selected
+                                        className={`w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors appearance-none bg-white ${!profile.department ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
+                                    >
+                                        <option value="">
+                                            {profile.department ? "팀 선택" : "본부를 먼저 선택하세요"}
+                                        </option>
+                                        {availableTeams.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                                </div>
                             </div>
+
+                            {/* 직급 */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-gray-500">직급</label>
-                                <input name="position" type="text" value={profile.position || ''} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
+                                <label className="text-xs font-bold text-gray-500">직급 <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <select 
+                                        name="position" 
+                                        required 
+                                        value={profile.position || ''} 
+                                        onChange={handleChange} 
+                                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors appearance-none bg-white"
+                                    >
+                                        <option value="">직급 선택</option>
+                                        {INITIAL_ORGANIZATION_DATA.positions.직급.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                                </div>
                             </div>
+
+                            {/* 직책 */}
                             <div className="space-y-1">
-                                <label className="text-xs font-bold text-gray-500">직책</label>
-                                <input name="jobTitle" type="text" value={profile.jobTitle || ''} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors" />
+                                <label className="text-xs font-bold text-gray-500">직책 <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <select 
+                                        name="jobTitle" 
+                                        required 
+                                        value={profile.jobTitle || ''} 
+                                        onChange={handleChange} 
+                                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-blue-500 transition-colors appearance-none bg-white"
+                                    >
+                                        <option value="">직책 선택</option>
+                                        {INITIAL_ORGANIZATION_DATA.positions.직책.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">▼</div>
+                                </div>
                             </div>
                         </div>
                         

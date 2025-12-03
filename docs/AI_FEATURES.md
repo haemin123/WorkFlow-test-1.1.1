@@ -2,7 +2,7 @@
 
 > **Note**: This document is auto-generated from source code (`services/prompts.ts`). Do not edit manually.
 
-Last Updated: 12/2/2025, 6:42:20 AM
+Last Updated: 12/3/2025, 12:55:05 AM
 
 ---
 
