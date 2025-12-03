@@ -4,7 +4,7 @@ import { Task, TaskStatus, Priority, ViewMode } from './types';
 import { taskService } from './services/taskService'; 
 import { Plus } from './components/Icons';
 import { LoginPage } from './components/LoginPage';
-import { LandingPage } from './components/LandingPage'; // Import LandingPage
+import { LandingPage } from './components/LandingPage';
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { authService } from './services/authService';
@@ -26,9 +26,12 @@ const ArchivePage = lazy(() => import('./components/ArchivePage').then(module =>
 const ProfilePage = lazy(() => import('./components/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const GoogleProfileModal = lazy(() => import('./components/GoogleProfileModal').then(module => ({ default: module.GoogleProfileModal })));
 
+// --- NEWLY ADDED FOR KNOWLEDGE HUB ---
+const KnowledgeHub = lazy(() => import('./components/KnowledgeHub').then(module => ({ default: module.KnowledgeHub })));
+
+
 export default function App() {
   const [showLanding, setShowLanding] = useState<boolean>(() => {
-    // URL에 view 파라미터가 있으면 랜딩 페이지를 건너뜀
     if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         return !params.has('view');
@@ -36,13 +39,12 @@ export default function App() {
     return true;
   }); 
 
-  // Initialize currentView from URL query parameter
+  // --- UPDATED to include 'KNOWLEDGE' view ---
   const [currentView, setCurrentView] = useState<ViewMode>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const view = params.get('view');
-      // Validate if the view parameter matches ViewMode types
-      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS', 'KNOWLEDGE'].includes(view)) {
         return view as ViewMode;
       }
     }
@@ -54,15 +56,12 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tempTask, setTempTask] = useState<Task | null>(null);
   
-  // Auth State
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Profile Check State
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(false);
 
-  // Function to update view and URL
   const updateView = (newView: ViewMode) => {
     setCurrentView(newView);
     const url = new URL(window.location.href);
@@ -70,12 +69,12 @@ export default function App() {
     window.history.pushState({}, '', url);
   };
 
-  // Handle browser back/forward buttons
+  // --- UPDATED to handle 'KNOWLEDGE' view on popstate ---
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const view = params.get('view');
-      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS'].includes(view)) {
+      if (view && ['BOARD', 'INSIGHT', 'ARCHIVE', 'PROFILE', 'GEMINI', 'SETTINGS', 'KNOWLEDGE'].includes(view)) {
         setCurrentView(view as ViewMode);
         setShowLanding(false);
       } else if (!view) {
@@ -93,10 +92,8 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-          // setShowLanding(false); // Logged in -> REMOVED to respect URL state
           await checkUserProfile(currentUser.uid);
       } else {
-          // setShowLanding(true); // Not logged in -> REMOVED to respect URL state
           setIsProfileComplete(false);
           setAuthLoading(false);
       }
@@ -140,7 +137,7 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await authService.logout();
-      setShowLanding(true); // Show landing page on logout
+      setShowLanding(true);
       const url = new URL(window.location.href);
       url.searchParams.delete('view');
       window.history.pushState({}, '', url);
@@ -150,7 +147,6 @@ export default function App() {
   };
 
   const handleTaskClick = useCallback((task: Task) => {
-    // Removed blocking condition to allow viewing archived/trashed tasks
     setSelectedTask(task);
     setTempTask(null);
     setIsModalOpen(true);
@@ -309,7 +305,6 @@ export default function App() {
   const handleStartCreateTask = async () => {
     if (!user) return;
 
-    // Use Auth profile which is updated by ProfilePage
     let userProfile = { 
         name: user.displayName || 'User', 
         avatar: user.photoURL || undefined 
@@ -352,10 +347,8 @@ export default function App() {
         setIsModalOpen(false);
         setTempTask(null);
         
-        // AI Background Analysis
         (async () => {
             try {
-                // Initialize analysis object
                 let currentAnalysis = { 
                     lastUpdated: Date.now(),
                     executionPlan: [] as any[],
@@ -364,23 +357,17 @@ export default function App() {
                     learningResources: [] as any[]
                 };
 
-                // Helper to update state and DB incrementally
                 const updateProgress = async (partialAnalysis: Partial<typeof currentAnalysis>) => {
                     currentAnalysis = { ...currentAnalysis, ...partialAnalysis };
                     const updatedTask = { 
                         ...createdTask, 
                         aiAnalysis: currentAnalysis,
-                        // Keep status GENERATING until all done
                     };
                     
-                    // Update DB
                     await taskService.updateTask(updatedTask);
-                    
-                    // Update Local State
                     setTasks(prev => prev.map(t => t.id === createdTask.id ? updatedTask : t));
                 };
 
-                // 1. Strategy
                 try {
                     const executionPlan = await generateSubtasksAI(createdTask);
                     await updateProgress({ 
@@ -388,25 +375,21 @@ export default function App() {
                     });
                 } catch(e) { console.error("Strategy Gen Failed", e); }
 
-                // 2. DoD
                 try {
                     const acceptanceCriteria = await generateAcceptanceCriteriaAI(createdTask);
                     await updateProgress({ acceptanceCriteria });
                 } catch(e) { console.error("DoD Gen Failed", e); }
 
-                // 3. Solution
                 try {
                     const solutionDraft = await generateSolutionDraftAI(createdTask);
                     await updateProgress({ solutionDraft });
                 } catch(e) { console.error("Solution Gen Failed", e); }
 
-                // 4. Resources
                 try {
                     const learningResources = await recommendResourcesAI(createdTask);
                     await updateProgress({ learningResources });
                 } catch(e) { console.error("Resources Gen Failed", e); }
 
-                // Final Update: Set status COMPLETED
                 const finalTaskUpdate = { 
                     ...createdTask, 
                     aiAnalysis: currentAnalysis, 
@@ -417,7 +400,6 @@ export default function App() {
                 
             } catch (e) {
                 console.error("Background AI Analysis Failed", e);
-                // Mark as failed
                 const failedTask = { ...createdTask, aiStatus: 'FAILED' as const };
                 await taskService.updateTask(failedTask);
                 setTasks(prev => prev.map(t => t.id === createdTask.id ? failedTask : t));
@@ -438,7 +420,6 @@ export default function App() {
       );
   }
 
-  // Show Landing Page regardless of login status if showLanding is true
   if (showLanding) {
       return <LandingPage onStart={() => {
         setShowLanding(false);
@@ -460,7 +441,6 @@ export default function App() {
 
   return (
     <Layout currentView={currentView} onNavigate={updateView}>
-      {/* ... renderContent switch case ... */}
       {(() => {
           switch (currentView) {
               case 'INSIGHT':
@@ -529,64 +509,4 @@ export default function App() {
                                     onTaskClick={handleTaskClick}
                                     onStatusChange={handleStatusChange}
                                     onDeleteTask={handleMoveToTrash} 
-                                    onArchiveTask={handleArchiveTask} 
-                                    onArchiveAll={handleArchiveAll} 
-                                    currentUser={user} 
-                                />
-                            </Suspense>
-                        </div>
-                    </>
-                  );
-              case 'GEMINI':
-                  return (
-                      <div className="flex flex-col h-full">
-                          <CommonHeader 
-                            title="Gemini Pro" 
-                            subtitle="AI와 대화하며 업무 효율을 높이세요."
-                            user={user}
-                            onLogout={handleLogout}
-                            onNavigateProfile={() => updateView('PROFILE')}
-                          />
-                          <Suspense fallback={<div className="p-8">Loading Gemini...</div>}>
-                              <GeminiPage tasks={tasks} currentUser={user} />
-                          </Suspense>
-                      </div>
-                  );
-              case 'SETTINGS':
-                  return (
-                      <div className="flex flex-col h-full">
-                          <CommonHeader 
-                            title="환경 설정" 
-                            subtitle="앱의 기본 설정을 변경합니다."
-                            user={user}
-                            onLogout={handleLogout}
-                            onNavigateProfile={() => updateView('PROFILE')}
-                          />
-                          <Suspense fallback={<div className="p-8">Loading Settings...</div>}>
-                            <SettingsPage />
-                          </Suspense>
-                      </div>
-                  );
-              default:
-                return null;
-          }
-      })()}
-      
-      {(selectedTask || tempTask) && (
-        <Suspense fallback={null}>
-            <AIModal 
-            task={selectedTask || tempTask!}
-            isOpen={isModalOpen}
-            onClose={() => {
-                setIsModalOpen(false);
-                setTempTask(null);
-            }}
-            onUpdateTask={handleUpdateTask}
-            onCreateTask={tempTask ? handleFinalizeCreateTask : undefined}
-            onDeleteTask={handleMoveToTrash}
-            />
-        </Suspense>
-      )}
-    </Layout>
-  );
-}
+                                    on
