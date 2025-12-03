@@ -1,5 +1,5 @@
-// services/geminiService.ts (Updated with Chat Context)
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// services/geminiService.ts (Updated with Chat Context and Knowledge Hub)
+import { GoogleGenerativeAI } from '@google/genai';
 import { Task, Subtask } from '../types';
 import { AI_CONFIG } from '../constants';
 import {
@@ -56,10 +56,8 @@ async function callGeminiAPI(
   }
 
   try {
-    // 프롬프트 크기 최적화
     const optimizedPrompt = optimizePromptSize(prompt, 8000);
     
-    // 프롬프트 크기 로깅
     const size = {
       chars: optimizedPrompt.length,
       tokens: Math.ceil(optimizedPrompt.length / 4)
@@ -101,10 +99,8 @@ async function callGeminiAPI(
  */
 function parseJSONResponse(text: string): any {
   try {
-    // 1. 마크다운 코드 블록 제거 (```json ... ```)
     let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     
-    // 2. JSON 객체/배열 부분만 추출 (앞뒤 사족 제거)
     const firstOpenBrace = cleaned.indexOf('{');
     const firstOpenBracket = cleaned.indexOf('[');
     let startIdx = -1;
@@ -157,6 +153,15 @@ function ensureArrayLength<T>(arr: T[], expectedLength: number, defaultItem: T):
   }
 
   return arr;
+}
+
+/**
+ * Extracts a YouTube video ID from a URL.
+ */
+function extractYouTubeVideoId(url: string): string | null {
+    const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
 }
 
 // ============================================
@@ -248,7 +253,6 @@ export async function generateAcceptanceCriteriaAI(task: Task): Promise<any[]> {
   
     let criteria = parseJSONResponse(response);
   
-    // 배열인지 확인 후 처리
     if (!Array.isArray(criteria)) {
         console.warn("AI response is not an array, attempting to fix", criteria);
         criteria = []; 
@@ -412,11 +416,9 @@ export async function startChatWithTaskContext(
   userMessage: string,
   tasks: Task[]
 ): Promise<string> {
-  // 1. Task 정보 포맷팅 (체크된 완료조건 강조)
   const taskContext = tasks.map((t, index) => {
-    // 완료 조건 파싱 및 우선순위 처리
     const checkedCriteria = t.aiAnalysis?.acceptanceCriteria
-      ?.filter((ac: any) => ac.checked) // 체크된 항목 필터링
+      ?.filter((ac: any) => ac.checked)
       .map((ac: any) => `- [✅우선/달성됨] ${ac.content}`)
       .join('\n      ');
 
@@ -425,7 +427,6 @@ export async function startChatWithTaskContext(
       .map((ac: any) => `- ${ac.content}`)
       .join('\n      ');
 
-    // 실행 계획 파싱
     const executionPlan = t.aiAnalysis?.executionPlan
       ?.map((ep: any) => `- ${ep.title} (${ep.completed ? '완료' : '진행전'})`)
       .join('\n      ');
@@ -443,55 +444,10 @@ export async function startChatWithTaskContext(
     `;
   }).join('\n----------------------------------\n');
 
-  // 2. 시스템 프롬프트 구성
   const systemPrompt = `
 # Role: Nexus AI Project Manager
 당신은 사용자의 전체 프로젝트와 업무(Task) 상황을 꿰뚫어 보고 있는 유능한 AI PM입니다.
 
 # Context (User's Tasks)
 현재 사용자가 관리 중인 업무 목록은 다음과 같습니다.
-특히 **[✅우선/달성됨]** 표시가 있는 완료 조건은 사용자가 이미 확인했거나 가장 중요하게 생각하는 기준이므로,
-답변 시 이를 최우선으로 고려하고 반영해야 합니다.
-
-${taskContext}
-
-# Instruction
-위 컨텍스트를 바탕으로 사용자의 질문에 답변하세요.
-- 사용자의 질문이 특정 업무와 관련 있다면, 해당 업무의 상태, 완료 조건(특히 체크된 항목), 실행 계획을 구체적으로 언급하며 조언하세요.
-- 업무 간의 연관성이나 일정 충돌 등이 보이면 선제적으로 경고하거나 제안하세요.
-- 답변은 전문적이고 친절한 어조로 작성하세요.
-  `;
-
-  // 3. 채팅 세션 시작 및 메시지 전송
-  try {
-      // 1.5-flash or 2.0-flash 모델 사용 권장 (Smart Model)
-      const model = genAI.getGenerativeModel({ model: AI_CONFIG.MODEL_SMART }); 
-      
-      const chat = model.startChat({
-        history: [
-          { role: 'user', parts: [{ text: systemPrompt }] },
-          { role: 'model', parts: [{ text: '네, 사용자의 모든 업무 상황과 우선순위(체크된 완료조건 포함)를 숙지했습니다. 어떤 도움이 필요하신가요?' }] },
-          ...history
-        ]
-      });
-
-      const result = await chat.sendMessage(userMessage);
-      const response = await result.response;
-      return response.text();
-  } catch (error: any) {
-      console.error("❌ Chat with Task Context Error:", error);
-      throw new Error("채팅 서비스 연결 실패: " + error.message);
-  }
-}
-
-export default {
-  draftTaskWithAI,
-  generateSubtasksAI,
-  generateAcceptanceCriteriaAI,
-  generateSolutionDraftAI,
-  recommendResourcesAI,
-  chatWithGuide,
-  generateInsights,
-  analyzeTaskWithAI,
-  startChatWithTaskContext // Export new function
-};
+특히 **[✅우선/달성됨
